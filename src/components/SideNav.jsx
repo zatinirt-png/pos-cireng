@@ -65,58 +65,71 @@ function isActivePath(current, to) {
   return current === to || current.startsWith(to + "/");
 }
 
-export default function SideNav() {
-  const [open, setOpen] = useState(false);
+function toneFromTo(to) {
+  if (to?.startsWith("/cashier")) return "orange";
+  if (to?.startsWith("/admin")) return "red";
+  if (to?.startsWith("/partner")) return "amber";
+  return "slate";
+}
+
+
+export default function SideNav({ open: openProp, setOpen: setOpenProp }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  const open = openProp ?? internalOpen;
+  const setOpen = setOpenProp ?? setInternalOpen;
+
   const loc = useLocation();
   const nav = useNavigate();
 
   // scope ditentukan dari path aktif
   const scope = useMemo(() => scopeFromPath(loc.pathname), [loc.pathname]);
-  const session = useMemo(() => getScopedSession(scope), [loc.pathname]); // ✅ re-run tiap pindah route
+  const session = useMemo(() => getScopedSession(scope), [scope, loc.pathname]);
+ // ✅ re-run tiap pindah route
 
 
   const role = session.role; // "ADMIN" | "PARTNER" | "CASHIER" | null
 
   // items dinamis sesuai role
   const items = useMemo(() => {
-    // Belum login: tampilkan pilihan login
-    if (!role) {
-      return [
-        { label: "Home", to: "/" },
-        { label: "Login Kasir", to: "/cashier" },
-        { label: "Login Admin", to: "/admin" },
-        { label: "Login Mitra", to: "/partner" },
-      ];
-    }
+  if (!role) {
+    return [
+      { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
+      { label: "Login Kasir", sub: "Mulai shift", to: "/cashier", tone: "orange" },
+      { label: "Login Admin", sub: "Kelola data", to: "/admin", tone: "red" },
+      { label: "Login Mitra", sub: "Pantau cabang", to: "/partner", tone: "amber" },
+    ];
+  }
 
-    if (role === "ADMIN") {
-      return [
-        { label: "Home", to: "/" },
-        { label: "Dashboard", to: "/admin/dashboard" },
-        { label: "Kelola Gerobak", to: "/admin/carts" },
-        { label: "Produk", to: "/admin/products" },
-        { label: "Promo", to: "/admin/promos" },
-        { label: "Users", to: "/admin/users" },
-        { label: "Reports", to: "/admin/reports" },
-      ];
-    }
+  if (role === "ADMIN") {
+    return [
+      { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
+      { label: "Dashboard", sub: "Ringkasan performa", to: "/admin/dashboard", tone: "red" },
+      { label: "Kelola Gerobak", sub: "Cabang & gerobak", to: "/admin/carts", tone: "red" },
+      { label: "Produk", sub: "Data produk & harga", to: "/admin/products", tone: "red" },
+      { label: "Promo", sub: "Diskon & campaign", to: "/admin/promos", tone: "red" },
+      { label: "Users", sub: "Akun & akses", to: "/admin/users", tone: "red" },
+      { label: "Reports", sub: "Laporan penjualan", to: "/admin/reports", tone: "red" },
+    ];
+  }
 
-    if (role === "CASHIER") {
-      return [
-        { label: "Home", to: "/" },
-        { label: "Kasir POS", to: "/cashier/pos" },
-      ];
-    }
+  if (role === "CASHIER") {
+    return [
+      { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
+      { label: "Kasir POS", sub: "Mulai transaksi", to: "/cashier/pos", tone: "orange" },
+    ];
+  }
 
-    if (role === "PARTNER") {
-      return [
-        { label: "Home", to: "/" },
-        { label: "Dashboard Mitra", to: "/partner/dashboard" },
-      ];
-    }
+  if (role === "PARTNER") {
+    return [
+      { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
+      { label: "Dashboard Mitra", sub: "Pantau cabang", to: "/partner/dashboard", tone: "amber" },
+    ];
+  }
 
-    return [{ label: "Home", to: "/" }];
-  }, [role]);
+  return [{ label: "Home", sub: "Beranda", to: "/", tone: "slate" }];
+}, [role]);
+
 
   // auto close ketika pindah halaman
   useEffect(() => {
@@ -163,17 +176,7 @@ export default function SideNav() {
 
   return (
     <>
-      {/* Trigger: hanya muncul saat CLOSED */}
-      {!open && (
-        <button
-          type="button"
-          className="sidenav-trigger"
-          aria-label="Buka menu"
-          onClick={() => setOpen(true)}
-        >
-          <span className="sidenav-trigger-icon" />
-        </button>
-      )}
+      
 
       {/* Overlay */}
       <div
@@ -194,19 +197,14 @@ export default function SideNav() {
           </div>
 
           {/* Close: nyatu di header sidebar */}
-          <button
-            type="button"
-            className="sidenav-close"
-            aria-label="Tutup menu"
-            onClick={() => setOpen(false)}
-          >
-            ✕
-          </button>
+          
         </div>
 
         <div className="sidenav-list">
           {items.map((it) => {
             const active = isActivePath(loc.pathname, it.to);
+            const tone = it.tone || toneFromTo(it.to);
+
             return (
               <button
                 key={it.to}
@@ -214,23 +212,40 @@ export default function SideNav() {
                 className={`sidenav-item ${active ? "active" : ""}`}
                 onClick={() => go(it.to)}
               >
-                {it.label}
+                <span className="sidenav-item-accent" aria-hidden="true" />
+
+                <span className="sidenav-item-icon" aria-hidden="true">
+                  <span className={`sidenav-dot tone-${tone}`} />
+                </span>
+
+                <span className="sidenav-item-body">
+                  <span className="sidenav-item-title">{it.label}</span>
+                  <span className="sidenav-item-sub">{it.sub}</span>
+                </span>
+
+                <span className="sidenav-item-chevron" aria-hidden="true">›</span>
               </button>
             );
           })}
         </div>
 
+
         <div className="sidenav-footer">
-          {role ? (
-            <button type="button" className="sidenav-cta" onClick={logout}>
-              Logout
-            </button>
-          ) : (
+          <div className="sidenav-footer-actions">
             <button type="button" className="sidenav-cta" onClick={() => setOpen(false)}>
               Tutup
             </button>
-          )}
+
+            {role && (
+              <button type="button" className="sidenav-cta danger" onClick={logout}>
+                Logout
+              </button>
+            )}
+          </div>
+
+          <div className="sidenav-meta">POS Cireng • v0.1</div>
         </div>
+
       </aside>
     </>
   );

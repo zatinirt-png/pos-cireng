@@ -1,8 +1,10 @@
-﻿import React from "react";
+﻿import React, { useState } from "react";
+
 import { Routes, Route, useLocation } from "react-router-dom";
 
 import CashierLogin from "./pages/CashierLogin.jsx";
 import CashierPOS from "./pages/CashierPOS.jsx";
+import logo from "./assets/cbur-logo.png";
 
 import AdminLogin from "./pages/AdminLogin.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -18,31 +20,68 @@ import PartnerDashboard from "./pages/PartnerDashboard";
 import LoginGate from "./pages/LoginGate";
 import SideNav from "./components/SideNav";
 
-function Topbar() {
+function Topbar({ menuOpen, onToggleMenu }) {
   const loc = useLocation();
+
+  const isHome = loc.pathname === "/";
+
+  const scopeLabel = loc.pathname.includes("cashier")
+    ? "Kasir"
+    : loc.pathname.includes("admin")
+    ? "Admin"
+    : loc.pathname.includes("partner")
+    ? "Mitra"
+    : "App";
+
   return (
     <div className="topbar">
-      <div>
-        <b>POS Cireng Live</b>
-        <span className="badge" style={{ marginLeft: 8 }}>
-          {loc.pathname.includes("cashier")
-            ? "Kasir"
-            : loc.pathname.includes("admin")
-            ? "Admin"
-            : loc.pathname.includes("partner")
-            ? "Mitra"
-            : "App"}
-        </span>
+      <div className="topbar-left">
+        <img className="topbar-logo" src={logo} alt="CBUR" />
+        <div className="topbar-titles">
+          <div className="topbar-title">{isHome ? "POS Cireng" : "POS Cireng Live"}</div>
+          <div className="topbar-subtitle">
+            {isHome ? "Pilih peran untuk login" : `Mode: ${scopeLabel}`}
+          </div>
+        </div>
+
+        {!isHome && (
+          <span className="badge" style={{ marginLeft: 10 }}>
+            {scopeLabel}
+          </span>
+        )}
+      </div>
+
+      {/* ✅ Kanan: burger + logo */}
+      <div className="topbar-right">
+        <button
+          type="button"
+          className={`topbar-menu-btn ${menuOpen ? "open" : ""}`}
+          onClick={onToggleMenu}
+          aria-label={menuOpen ? "Tutup menu" : "Buka menu"}
+          aria-expanded={menuOpen}
+        >
+          <span className="topbar-menu-icon" />
+        </button>
+
+        
       </div>
     </div>
   );
 }
 
+
+
 export default function App() {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <>
-      <Topbar />
-      <SideNav />
+      <Topbar
+        menuOpen={menuOpen}
+        onToggleMenu={() => setMenuOpen((v) => !v)}
+      />
+
+      <SideNav open={menuOpen} setOpen={setMenuOpen} />
 
       <Routes>
         <Route path="/" element={<LoginGate />} />
@@ -67,3 +106,4 @@ export default function App() {
     </>
   );
 }
+
