@@ -64,3 +64,16 @@ export async function apiPut(path, body, token) {
   if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
   return data;
 }
+
+export async function apiDelete(path, token) {
+  const res = await fetch(API_BASE + path, {
+    method: "DELETE",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  const { data, raw } = await parseBody(res);
+  if (!res.ok) throw new Error(data.error || raw || `HTTP ${res.status}`);
+  return data;
+}

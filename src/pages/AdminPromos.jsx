@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { apiGet, apiPost, apiPatch } from "../api";
+import { apiGet, apiPost, apiPatch, apiDelete } from "../api";
 import { useNavigate } from "react-router-dom";
 
 export default function AdminPromos() {
   const nav = useNavigate();
   const token = localStorage.getItem("admin_token");
+  const [showInactive, setShowInactive] = useState(false);
 
   const [promos, setPromos] = useState([]);
   const [products, setProducts] = useState([]);
@@ -133,6 +134,28 @@ export default function AdminPromos() {
     }
   }
 
+  async function deletePromo(p) {
+    setMsg(""); setErr("");
+
+    const active = !!(p.isActive ?? p.active);
+    if (active) {
+      setErr("Nonaktifkan dulu sebelum hapus permanen.");
+      return;
+    }
+
+    const ok = window.confirm(`Hapus permanen promo "${p.name}"?\nTindakan ini tidak bisa dibatalkan.`);
+    if (!ok) return;
+
+    try {
+      await apiDelete(`/api/admin/promos/${p.id}`, token);
+      setMsg("Promo dihapus permanen.");
+      await load();
+    } catch (e) {
+      setErr(e.message || "Gagal hapus promo");
+    }
+  }
+
+
   return (
     <div className="container">
       <div className="card">
@@ -226,6 +249,17 @@ export default function AdminPromos() {
         <div className="hr" />
 
         <h3>Daftar Promo</h3>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            />
+            Tampilkan INACTIVE
+          </label>
+        </div>
+
         <table className="table">
           <thead>
             <tr>
@@ -237,7 +271,7 @@ export default function AdminPromos() {
             </tr>
           </thead>
           <tbody>
-            {promos.map(p => {
+            {(showInactive ? promos : promos.filter(p => (p.isActive ?? p.active) !== false)).map(p => {
               const active = !!(p.isActive ?? p.active);
               const rule = p.type === "DISCOUNT_PERCENT"
                 ? `${p.discountPercent || 0}%`
@@ -253,6 +287,15 @@ export default function AdminPromos() {
                     <button className={active ? "btn danger" : "btn"} onClick={() => toggleActive(p)}>
                       {active ? "Nonaktifkan" : "Aktifkan"}
                     </button>
+                    <button
+                    className="btn danger"
+                    onClick={() => deletePromo(p)}
+                    disabled={!!(p.isActive ?? p.active)}
+                    title={!!(p.isActive ?? p.active) ? "Nonaktifkan dulu untuk bisa hapus permanen" : "Hapus permanen"}
+                  >
+                    Hapus
+                  </button>
+
                   </td>
                 </tr>
               );

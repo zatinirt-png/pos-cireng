@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { apiGet, apiPost, apiPatch } from "../api";
+import { apiGet, apiPost, apiPatch, apiDelete } from "../api";
 import { useNavigate } from "react-router-dom";
 
 const CACHE_KEY = "admin_products_cache_v1";
@@ -8,6 +8,7 @@ const CACHE_TTL = 30_000; // 30 detik
 export default function AdminProducts() {
   const nav = useNavigate();
   const token = localStorage.getItem("admin_token");
+  const [showInactive, setShowInactive] = useState(false);
 
   const didLoadRef = useRef(false);
 
@@ -177,6 +178,35 @@ export default function AdminProducts() {
     }
   }
 
+  async function deleteProduct(p) {
+    setMsg("");
+    setErr("");
+
+    const active = !!(p.isActive ?? p.active);
+    if (active) {
+      setErr("Nonaktifkan dulu sebelum hapus permanen.");
+      return;
+    }
+
+    const ok = window.confirm(`Hapus permanen produk "${p.name}"?\nTindakan ini tidak bisa dibatalkan.`);
+    if (!ok) return;
+
+    try {
+      await apiDelete(`/api/admin/products/${p.id}`, token);
+
+      setItems((prev) => {
+        const next = prev.filter((x) => x.id !== p.id);
+        writeCache(next);
+        return next;
+      });
+
+      setMsg("Produk dihapus permanen.");
+    } catch (e) {
+      setErr(e.message || "Gagal hapus produk");
+    }
+  }
+
+
   return (
     <div className="container">
       <div className="card">
@@ -234,6 +264,20 @@ export default function AdminProducts() {
         <div className="hr" />
 
         <h3>Daftar Produk</h3>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            />
+            Tampilkan INACTIVE
+          </label>
+          <div className="muted" style={{ fontSize: 12 }}>
+            Default hanya ACTIVE biar list rapi.
+          </div>
+        </div>
+
         <table className="table">
           <thead>
             <tr>
@@ -246,7 +290,7 @@ export default function AdminProducts() {
             </tr>
           </thead>
           <tbody>
-            {items.map((p) => {
+            {(showInactive ? items : items.filter(p => (p.isActive ?? p.active) !== false)).map((p) => {
               const active = !!(p.isActive ?? p.active);
               return (
                 <tr key={p.id}>
@@ -260,6 +304,15 @@ export default function AdminProducts() {
                     <button className={active ? "btn danger" : "btn"} onClick={() => toggleActive(p)}>
                       {active ? "Nonaktifkan" : "Aktifkan"}
                     </button>
+                    <button
+                      className="btn danger"
+                      onClick={() => deleteProduct(p)}
+                      disabled={!!(p.isActive ?? p.active)}  // hanya bisa jika inactive
+                      title={!!(p.isActive ?? p.active) ? "Nonaktifkan dulu untuk bisa hapus permanen" : "Hapus permanen"}
+                    >
+                      Hapus
+                    </button>
+
                   </td>
                 </tr>
               );
