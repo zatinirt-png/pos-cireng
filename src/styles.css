@@ -1070,4 +1070,295 @@ label { font-size: 12px; opacity: 0.8; display: block; margin-bottom: 6px; }
   box-shadow: 0 14px 30px rgba(255,176,1,0.18);
 }
 
+/* =========================
+   CASHIER POS (UI/UX)
+   ========================= */
+.pos-bg{
+  min-height: calc(100vh - var(--topbar-h));
+  background: var(--cbur-bg);
+  position: relative;
+  overflow: hidden;
+  padding: clamp(14px, 2vw, 22px) 0 44px;
+}
+
+.pos-bg::before{
+  content:"";
+  position:absolute;
+  inset:-220px;
+  pointer-events:none;
+  background:
+    radial-gradient(600px 420px at 18% 12%, rgba(251,158,58,0.16), transparent 62%),
+    radial-gradient(520px 380px at 86% 22%, rgba(202,47,20,0.10), transparent 60%),
+    radial-gradient(560px 420px at 86% 84%, rgba(255,176,1,0.14), transparent 60%),
+    radial-gradient(720px 520px at 40% 100%, rgba(225,205,169,0.16), transparent 65%);
+  filter: blur(1px);
+}
+
+.pos-shell{
+  max-width: 1320px;               /* ✅ lebih lebar biar “kepakai” di laptop */
+  margin: 0 auto;
+  padding: 0 clamp(14px, 2vw, 18px);
+  position: relative;
+  z-index: 1;
+}
+
+.pos-stack{
+  display: grid;
+  gap: 14px;
+}
+
+.pos-card{
+  border-radius: 22px;
+  background: rgba(252,249,241,0.72);
+  border: 1px solid rgba(225,205,169,0.55);
+  box-shadow: 0 16px 50px rgba(0,0,0,0.07);
+  backdrop-filter: blur(10px);
+  padding: clamp(14px, 2vw, 18px);
+}
+
+.pos-header{
+  padding: clamp(14px, 2vw, 18px);
+}
+
+.pos-header-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap: 12px;
+}
+
+.pos-title{
+  margin: 0;
+  font-size: clamp(20px, 2.2vw, 28px);
+  font-weight: 950;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.pos-grid{
+  display: grid;
+  grid-template-columns: 1.55fr 0.95fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 980px){
+  .pos-grid{ grid-template-columns: 1fr; }
+}
+
+/* Item kartu antrian biar lebih clean daripada nested .card */
+.queue-item{
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.90);
+  border: 1px solid rgba(226,232,240,0.95);
+  box-shadow: none;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.queue-item:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(15,23,42,0.10);
+}
+
+/* Grid menu lebih adaptif di layar lebar */
+@media (min-width: 1200px){
+  .grid-products{ grid-template-columns: repeat(4, 1fr); }
+}
+
+/* =========================
+   POS — refine containers & buttons (NON-default)
+   ========================= */
+
+/* Headings & separators inside POS */
+.pos-bg h3{
+  font-size: 16px;
+  font-weight: 950;
+  letter-spacing: -0.015em;
+  margin: 0 0 10px;
+  color: var(--text);
+}
+.pos-bg label{
+  font-size: 12px;
+  color: rgba(20,20,20,0.70);
+  margin-bottom: 6px;
+}
+.pos-bg .hr{
+  height: 1px;
+  background: rgba(225,205,169,0.45);
+  margin: 14px 0;
+}
+
+/* Inputs: biar “soft” dan ada focus ring */
+.pos-bg .input,
+.pos-bg select,
+.pos-bg textarea{
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(225,205,169,0.65);
+  background: rgba(255,255,255,0.78);
+  outline: none;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.70) inset;
+  transition: box-shadow .12s ease, border-color .12s ease, transform .12s ease;
+}
+.pos-bg .input:focus,
+.pos-bg select:focus,
+.pos-bg textarea:focus{
+  border-color: rgba(251,158,58,0.95);
+  box-shadow:
+    0 0 0 4px rgba(251,158,58,0.16),
+    0 1px 0 rgba(255,255,255,0.70) inset;
+}
+
+/* Buttons: primary/secondary/danger jadi modern */
+.pos-bg .btn{
+  appearance: none;
+  border: 1px solid rgba(0,0,0,0.06);
+  padding: 12px 14px;
+  border-radius: 16px;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+
+  color: #1a1208;
+  background: linear-gradient(135deg, var(--cbur-orange) 0%, var(--cbur-amber) 100%);
+  box-shadow:
+    0 14px 28px rgba(251,158,58,0.22),
+    0 2px 0 rgba(255,255,255,0.40) inset;
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+}
+.pos-bg .btn:hover{
+  transform: translateY(-1px);
+  filter: saturate(1.05);
+  box-shadow:
+    0 18px 36px rgba(251,158,58,0.26),
+    0 2px 0 rgba(255,255,255,0.42) inset;
+}
+.pos-bg .btn:active{
+  transform: translateY(0px);
+  box-shadow:
+    0 12px 22px rgba(251,158,58,0.20),
+    0 2px 0 rgba(255,255,255,0.36) inset;
+}
+.pos-bg .btn:focus-visible{
+  outline: none;
+  box-shadow:
+    0 0 0 4px rgba(251,158,58,0.22),
+    0 14px 28px rgba(251,158,58,0.22),
+    0 2px 0 rgba(255,255,255,0.40) inset;
+}
+.pos-bg .btn:disabled{
+  opacity: 0.60;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+}
+
+/* Secondary = “glass/cream” */
+.pos-bg .btn.secondary{
+  color: var(--text);
+  background: rgba(252,249,241,0.84);
+  border: 1px solid rgba(225,205,169,0.80);
+  box-shadow: 0 12px 26px rgba(15,23,42,0.08);
+}
+.pos-bg .btn.secondary:hover{
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 16px 30px rgba(15,23,42,0.10);
+}
+
+/* Danger = red gradient */
+.pos-bg .btn.danger{
+  color: #fff;
+  border: 1px solid rgba(202,47,20,0.35);
+  background: linear-gradient(135deg, var(--cbur-red) 0%, var(--cbur-red2) 100%);
+  box-shadow:
+    0 14px 28px rgba(202,47,20,0.20),
+    0 2px 0 rgba(255,255,255,0.14) inset;
+}
+.pos-bg .btn.danger:hover{
+  box-shadow:
+    0 18px 34px rgba(202,47,20,0.24),
+    0 2px 0 rgba(255,255,255,0.14) inset;
+}
+
+/* Buttons kecil otomatis untuk tabel qty & kartu menu */
+.pos-bg .table .btn,
+.pos-bg .prod .btn{
+  min-height: 38px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+
+/* Card kecil di dalam POS (misal summary) biar nggak “default putih” */
+.pos-bg .card{
+  background: rgba(255,255,255,0.72);
+  border: 1px solid rgba(225,205,169,0.55);
+  border-radius: 18px;
+  box-shadow: 0 12px 26px rgba(15,23,42,0.06);
+}
+
+/* Badge biar lebih premium */
+.pos-bg .badge{
+  background: rgba(252,249,241,0.86);
+  border: 1px solid rgba(225,205,169,0.70);
+  color: rgba(15,23,42,0.90);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+/* Product card: dari hitam “keras” jadi soft + accent */
+.pos-bg .prod{
+  position: relative;
+  padding: 14px;
+  padding-top: 18px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.80);
+  border: 1px solid rgba(225,205,169,0.62);
+  color: var(--text);
+  cursor: default;
+  box-shadow: 0 12px 26px rgba(15,23,42,0.07);
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.pos-bg .prod::before{
+  content:"";
+  position:absolute;
+  left: 14px;
+  right: 14px;
+  top: 10px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(251,158,58,0.95),
+    rgba(255,176,1,0.90),
+    rgba(202,47,20,0.75)
+  );
+  opacity: 0.75;
+}
+.pos-bg .prod:hover{
+  transform: translateY(-1px);
+  background: rgba(255,255,255,0.88);
+  box-shadow: 0 16px 34px rgba(15,23,42,0.10);
+}
+.pos-bg .prod small{ opacity: 0.72; display:block; }
+
+/* Table lebih clean */
+.pos-bg .table th{
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: rgba(15,23,42,0.65);
+  border-bottom: 1px solid rgba(225,205,169,0.45);
+}
+.pos-bg .table td{
+  border-bottom: 1px solid rgba(225,205,169,0.35);
+}
+.pos-bg .table tr:hover td{
+  background: rgba(252,249,241,0.55);
+}
 

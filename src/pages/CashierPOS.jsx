@@ -370,7 +370,7 @@ export default function CashierPOS() {
     }
   }
 
-  // ===== ENQUEUE ORDER (INI YANG KAMU MINTA) =====
+  // ===== ENQUEUE ORDER =====
   async function enqueueOrder() {
     setErr("");
     setMsg("");
@@ -382,7 +382,10 @@ export default function CashierPOS() {
 
       // client-side quick duplicate check (backend juga cek)
       const dup = (queue || []).some(
-        (q) => String(q.customerName || "").trim().toLowerCase() === cn.toLowerCase()
+        (q) =>
+          String(q.customerName || "")
+            .trim()
+            .toLowerCase() === cn.toLowerCase()
       );
       if (dup) throw new Error("Nama pelanggan sudah ada di antrian.");
 
@@ -510,7 +513,9 @@ export default function CashierPOS() {
         setMovements(mv.movements);
       } catch (_) {}
 
-      setMsg("Checkout sukses. ID: " + res.saleId + " | Total: " + rupiah(res.netTotal));
+      setMsg(
+        "Checkout sukses. ID: " + res.saleId + " | Total: " + rupiah(res.netTotal)
+      );
 
       setModalOpen(false);
       setOpenOrder(null);
@@ -554,65 +559,656 @@ export default function CashierPOS() {
     }
   }
 
-  // ===== LAYOUT 2 KOLOM =====
+  // ===== LAYOUT BARU (pos-bg / pos-shell / pos-card / pos-grid) =====
   return (
-    <div className="container">
-      {/* HEADER */}
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0 }}>{cartName}</h2>
-          <button className="btn secondary" onClick={logout}>Logout</button>
-        </div>
+    <div className="pos-bg">
+      <div className="pos-shell">
+        <div className="pos-stack">
+          {/* HEADER */}
+          <div className="pos-card pos-header">
+            <div className="pos-header-row">
+              <h2 className="pos-title">{cartName}</h2>
+              <button className="btn secondary" onClick={logout}>
+                Logout
+              </button>
+            </div>
 
-        {err && (
-          <div className="toast" style={{ background: "#ffecec", borderColor: "#ffbdbd", marginTop: 12 }}>
-            {err}
+            {err && (
+              <div
+                className="toast"
+                style={{
+                  background: "#ffecec",
+                  borderColor: "#ffbdbd",
+                  marginTop: 12,
+                }}
+              >
+                {err}
+              </div>
+            )}
+            {msg && (
+              <div className="toast" style={{ marginTop: 12 }}>
+                {msg}
+              </div>
+            )}
           </div>
-        )}
-        {msg && <div className="toast" style={{ marginTop: 12 }}>{msg}</div>}
-      </div>
 
-      <div style={{ height: 14 }} />
+          {/* GRID 2 KOLOM */}
+          <div className="pos-grid">
+            {/* LEFT: MENU + CART */}
+            <div>
+              <div className="pos-card">
+                {!shift ? (
+                  <>
+                    <h3>Buka Shift</h3>
+                    <label>Modal kas awal (Rp)</label>
+                    <input
+                      className="input"
+                      type="number"
+                      value={openingCash}
+                      onChange={(e) => setOpeningCash(e.target.value)}
+                    />
+                    <div style={{ marginTop: 10 }}>
+                      <button className="btn" onClick={openShift}>
+                        Buka Shift
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <span className="badge">SHIFT OPEN</span>{" "}
+                    <span className="muted">
+                      dibuka: {new Date(shift.openedAt).toLocaleString("id-ID")}
+                    </span>
 
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
-        {/* LEFT: MENU + CART */}
-        <div style={{ flex: 1.55, minWidth: 360 }}>
-          <div className="card">
-            {!shift ? (
-              <>
-                <h3>Buka Shift</h3>
-                <label>Modal kas awal (Rp)</label>
-                <input className="input" type="number" value={openingCash} onChange={(e) => setOpeningCash(e.target.value)} />
-                <div style={{ marginTop: 10 }}>
-                  <button className="btn" onClick={openShift}>Buka Shift</button>
+                    <div className="hr" />
+
+                    {/* PROMO (untuk transaksi langsung & nanti checkout order) */}
+                    <h3>Promo</h3>
+                    <div className="grid-products">
+                      {(meta?.promos || []).map((p) => {
+                        const active = promoIds.includes(p.id);
+                        return (
+                          <div
+                            key={p.id}
+                            className="prod"
+                            style={{ opacity: p.isActive === false ? 0.6 : 1 }}
+                          >
+                            <b>{p.name}</b>
+                            <small className="muted">
+                              {p.type === "DISCOUNT_PERCENT"
+                                ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(
+                                    p.minSubtotal || 0
+                                  )})`
+                                : `Bonus x${p.bonusQty || 0} (Min ${rupiah(
+                                    p.minSubtotal || 0
+                                  )})`}
+                            </small>
+
+                            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                              <button
+                                className={active ? "btn" : "btn secondary"}
+                                type="button"
+                                onClick={() => togglePromo(p.id)}
+                              >
+                                {active ? "Dipakai" : "Pakai"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {(!meta?.promos || meta.promos.length === 0) && (
+                        <div className="muted">Belum ada promo aktif.</div>
+                      )}
+                    </div>
+
+                    <div className="hr" />
+
+                    {/* MENU */}
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <h3 style={{ margin: 0 }}>Menu</h3>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          Sync: {metaSyncAt ? metaSyncAt.toLocaleTimeString("id-ID") : "-"}
+                        </span>
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={() => loadMeta({ silent: false })}
+                        >
+                          Sync
+                        </button>
+                      </div>
+                    </div>
+
+                    {metaSyncErr ? (
+                      <div className="muted" style={{ marginTop: 8, color: "#b00020" }}>
+                        Sync error: {metaSyncErr}
+                      </div>
+                    ) : null}
+
+                    <div className="grid-products">
+                      {meta?.products?.map((p) => (
+                        <div key={p.id} className="prod">
+                          <b>{p.name}</b>
+                          <small>
+                            Kecil {rupiah(p.priceSmall)} • Besar {rupiah(p.priceLarge)}
+                          </small>
+
+                          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                            <button
+                              className="btn secondary"
+                              type="button"
+                              onClick={() => addProduct(p, "SMALL")}
+                            >
+                              Kecil
+                            </button>
+                            <button
+                              className="btn secondary"
+                              type="button"
+                              onClick={() => addProduct(p, "LARGE")}
+                            >
+                              Besar
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="hr" />
+
+                    {/* CART */}
+                    <h3>Keranjang</h3>
+
+                    {cart.length === 0 ? (
+                      <div className="muted">Belum ada item.</div>
+                    ) : (
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Item</th>
+                            <th style={{ width: 120 }}>Qty</th>
+                            <th style={{ width: 140 }}>Subtotal</th>
+                            <th style={{ width: 80 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cart.map((it) => (
+                            <tr key={it.key}>
+                              <td>
+                                <div>
+                                  <b>{it.name}</b>
+                                </div>
+                                <div style={{ marginTop: 6 }}>
+                                  <input
+                                    className="input"
+                                    placeholder="Catatan (level pedas/mix saus)"
+                                    value={it.itemNote}
+                                    onChange={(e) =>
+                                      setCart((prev) =>
+                                        prev.map((x) =>
+                                          x.key === it.key
+                                            ? { ...x, itemNote: e.target.value }
+                                            : x
+                                        )
+                                      )
+                                    }
+                                  />
+                                </div>
+                              </td>
+                              <td>
+                                <div style={{ display: "flex", gap: 6 }}>
+                                  <button
+                                    className="btn secondary"
+                                    onClick={() => updateQty(it.key, -1)}
+                                  >
+                                    -
+                                  </button>
+                                  <div
+                                    style={{
+                                      minWidth: 28,
+                                      textAlign: "center",
+                                      paddingTop: 10,
+                                    }}
+                                  >
+                                    {it.qty}
+                                  </div>
+                                  <button
+                                    className="btn secondary"
+                                    onClick={() => updateQty(it.key, +1)}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+                              <td>{rupiah(it.price * it.qty)}</td>
+                              <td>
+                                <button className="btn danger" onClick={() => removeItem(it.key)}>
+                                  X
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    <div className="hr" />
+
+                    {/* ✅ INPUT NAMA + TOMBOL TAMBAH ANTRIAN */}
+                    <h3>Tambah ke Antrian</h3>
+                    <div className="row">
+                      <div className="col">
+                        <label>Nama pelanggan (unik)</label>
+                        <input
+                          className="input"
+                          value={customerName}
+                          onChange={(e) => setCustomerName(e.target.value)}
+                          placeholder="contoh: Budi / Teh Rina"
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 10 }}>
+                      <button
+                        className="btn secondary"
+                        onClick={enqueueOrder}
+                        disabled={!customerName || cart.length === 0}
+                      >
+                        Tambah ke Antrian (Belum Dibayar)
+                      </button>
+                    </div>
+
+                    <div className="hr" />
+
+                    {/* TRANSAKSI LANGSUNG (tetap ada) */}
+                    <h3>Selesaikan Langsung</h3>
+                    <div className="row">
+                      <div className="col">
+                        <label>Diskon (Rp)</label>
+                        <input
+                          className="input"
+                          type="number"
+                          value={discount}
+                          onChange={(e) => setDiscount(e.target.value)}
+                        />
+                      </div>
+                      <div className="col">
+                        <label>Metode Bayar</label>
+                        <select
+                          className="input"
+                          value={paymentMethod}
+                          onChange={(e) => setPaymentMethod(e.target.value)}
+                        >
+                          <option value="CASH">CASH</option>
+                          <option value="QRIS">QRIS</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 12 }}>
+                      <label>Catatan transaksi / antrian (opsional)</label>
+                      <textarea
+                        className="input"
+                        rows="2"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="hr" />
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <div className="muted">Total</div>
+                        <div style={{ fontSize: 22 }}>
+                          <b>{rupiah(netTotal)}</b>
+                        </div>
+                      </div>
+                      <button className="btn" onClick={submitSale} disabled={cart.length === 0}>
+                        Selesaikan
+                      </button>
+                    </div>
+
+                    <div className="hr" />
+
+                    {/* CASH MOVES */}
+                    <h3>Cash In/Out (Shift)</h3>
+                    <div className="row">
+                      <div className="col">
+                        <label>Jenis</label>
+                        <select
+                          className="input"
+                          value={cashMoveType}
+                          onChange={(e) => setCashMoveType(e.target.value)}
+                        >
+                          <option value="CASH_IN">CASH IN (Tambah kas)</option>
+                          <option value="CASH_OUT">CASH OUT (Pengeluaran)</option>
+                        </select>
+                      </div>
+                      <div className="col">
+                        <label>Nominal (Rp)</label>
+                        <input
+                          className="input"
+                          type="number"
+                          value={cashMoveAmount}
+                          onChange={(e) => setCashMoveAmount(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 12 }}>
+                      <label>Catatan</label>
+                      <input
+                        className="input"
+                        value={cashMoveNote}
+                        onChange={(e) => setCashMoveNote(e.target.value)}
+                        placeholder="contoh: beli gas / tambah kembalian"
+                      />
+                    </div>
+
+                    <div style={{ marginTop: 12 }}>
+                      <button
+                        className="btn secondary"
+                        onClick={submitCashMovement}
+                        disabled={!cashMoveAmount || Number(cashMoveAmount) <= 0}
+                      >
+                        Simpan Cash Movement
+                      </button>
+                    </div>
+
+                    <div className="hr" />
+                    <h3>Ringkasan Shift</h3>
+                    {summary ? (
+                      <div className="row">
+                        <div className="col">
+                          <div className="card">
+                            <div className="muted">Modal Awal</div>
+                            <div>
+                              <b>{rupiah(summary.openingCash)}</b>
+                            </div>
+                            <div className="muted" style={{ marginTop: 10 }}>
+                              Penjualan CASH
+                            </div>
+                            <div>
+                              <b>{rupiah(summary.cashSales)}</b>
+                            </div>
+                            <div className="muted" style={{ marginTop: 10 }}>
+                              Penjualan QRIS
+                            </div>
+                            <div>
+                              <b>{rupiah(summary.qrisSales)}</b>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="col">
+                          <div className="card">
+                            <div className="muted">Cash IN</div>
+                            <div>
+                              <b>{rupiah(summary.cashIn)}</b>
+                            </div>
+                            <div className="muted" style={{ marginTop: 10 }}>
+                              Cash OUT
+                            </div>
+                            <div>
+                              <b>{rupiah(summary.cashOut)}</b>
+                            </div>
+                            <div className="muted" style={{ marginTop: 10 }}>
+                              Expected Cash
+                            </div>
+                            <div style={{ fontSize: 18 }}>
+                              <b>{rupiah(summary.expectedCash)}</b>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="muted">Belum ada ringkasan.</div>
+                    )}
+
+                    <div className="hr" />
+                    <h3>Riwayat Cash Movement</h3>
+                    {movements.length ? (
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Waktu</th>
+                            <th>Jenis</th>
+                            <th>Nominal</th>
+                            <th>Catatan</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {movements.slice(0, 10).map((m) => (
+                            <tr key={m.id}>
+                              <td>{new Date(m.createdAt).toLocaleTimeString("id-ID")}</td>
+                              <td>
+                                <span className="badge">{m.type}</span>
+                              </td>
+                              <td>
+                                <b>{rupiah(m.amount)}</b>
+                              </td>
+                              <td className="muted">{m.note || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div className="muted">Belum ada cash in/out.</div>
+                    )}
+
+                    <div className="hr" />
+                    <h3>Tutup Shift</h3>
+                    <label>Kas fisik saat tutup (Rp)</label>
+                    <input
+                      className="input"
+                      type="number"
+                      value={closingCash}
+                      onChange={(e) => setClosingCash(e.target.value)}
+                    />
+                    <div style={{ marginTop: 10 }}>
+                      <button className="btn danger" onClick={closeShift}>
+                        Tutup Shift
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT: QUEUE LIST */}
+            <div>
+              <div className="pos-card">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <h3 style={{ margin: 0 }}>Antrian Pesanan</h3>
+                  <button className="btn secondary" onClick={loadQueue} disabled={qLoading}>
+                    {qLoading ? "Loading..." : "Refresh"}
+                  </button>
                 </div>
-              </>
-            ) : (
-              <>
-                <span className="badge">SHIFT OPEN</span>{" "}
-                <span className="muted">dibuka: {new Date(shift.openedAt).toLocaleString("id-ID")}</span>
+
+                <div className="muted" style={{ marginTop: 8 }}>
+                  Pesanan yang sudah masuk antrian belum dibayar. Klik untuk buka & selesaikan.
+                </div>
+
+                {qErr ? (
+                  <div
+                    className="toast"
+                    style={{
+                      background: "#ffecec",
+                      borderColor: "#ffbdbd",
+                      marginTop: 12,
+                    }}
+                  >
+                    {qErr}
+                  </div>
+                ) : null}
 
                 <div className="hr" />
 
-                {/* PROMO (untuk transaksi langsung & nanti checkout order) */}
-                <h3>Promo</h3>
+                {!queue.length ? (
+                  <div className="muted">Belum ada antrian.</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {queue.map((o) => (
+                      <div
+                        key={o.id}
+                        className="queue-item"
+                        onClick={() => openOrderModal(o.id)}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                          <div>
+                            <div style={{ fontSize: 16 }}>
+                              <b>{o.customerName}</b>
+                            </div>
+                            <div className="muted" style={{ fontSize: 12 }}>
+                              {new Date(o.createdAt).toLocaleTimeString("id-ID")} •{" "}
+                              {o.itemCount || 0} item
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div className="muted" style={{ fontSize: 12 }}>
+                              Estimasi
+                            </div>
+                            <div>
+                              <b>{rupiah(o.grossTotal || 0)}</b>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* MODAL CHECKOUT ORDER */}
+          {modalOpen && openOrder ? (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.35)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 16,
+                zIndex: 9999,
+              }}
+              onClick={() => {
+                setModalOpen(false);
+                setOpenOrder(null);
+              }}
+            >
+              <div
+                className="pos-card"
+                style={{ width: "min(920px, 96vw)", maxHeight: "88vh", overflow: "auto" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <h3 style={{ margin: 0 }}>Checkout: {openOrder.customerName}</h3>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      Dibuat: {new Date(openOrder.createdAt).toLocaleString("id-ID")}
+                    </div>
+                  </div>
+                  <button
+                    className="btn secondary"
+                    onClick={() => {
+                      setModalOpen(false);
+                      setOpenOrder(null);
+                    }}
+                  >
+                    Tutup
+                  </button>
+                </div>
+
+                <div className="hr" />
+
+                <h4 style={{ marginTop: 0 }}>Detail Item</h4>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Produk</th>
+                      <th style={{ width: 90 }}>Portion</th>
+                      <th style={{ width: 90 }}>Qty</th>
+                      <th style={{ width: 140 }}>Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(openOrder.items || []).map((it) => (
+                      <tr key={it.id}>
+                        <td>
+                          <b>{it.product?.name || "(Produk)"}</b>
+                          {it.itemNote ? (
+                            <div className="muted" style={{ fontSize: 12 }}>
+                              {it.itemNote}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>
+                          <span className="badge">{it.portion}</span>
+                        </td>
+                        <td>{it.qty}</td>
+                        <td>
+                          <b>{rupiah(Number(it.price || 0) * Number(it.qty || 0))}</b>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="hr" />
+
+                <h4 style={{ marginTop: 0 }}>Promo (opsional)</h4>
                 <div className="grid-products">
                   {(meta?.promos || []).map((p) => {
-                    const active = promoIds.includes(p.id);
+                    const active = checkout.promoIds.includes(p.id);
                     return (
-                      <div key={p.id} className="prod" style={{ opacity: p.isActive === false ? 0.6 : 1 }}>
+                      <div
+                        key={p.id}
+                        className="prod"
+                        style={{ opacity: p.isActive === false ? 0.6 : 1 }}
+                      >
                         <b>{p.name}</b>
                         <small className="muted">
                           {p.type === "DISCOUNT_PERCENT"
-                            ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(p.minSubtotal || 0)})`
-                            : `Bonus x${p.bonusQty || 0} (Min ${rupiah(p.minSubtotal || 0)})`}
+                            ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(
+                                p.minSubtotal || 0
+                              )})`
+                            : `Bonus x${p.bonusQty || 0} (Min ${rupiah(
+                                p.minSubtotal || 0
+                              )})`}
                         </small>
-
                         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                           <button
                             className={active ? "btn" : "btn secondary"}
                             type="button"
-                            onClick={() => togglePromo(p.id)}
+                            onClick={() => toggleCheckoutPromo(p.id)}
                           >
                             {active ? "Dipakai" : "Pakai"}
                           </button>
@@ -620,132 +1216,34 @@ export default function CashierPOS() {
                       </div>
                     );
                   })}
-                  {(!meta?.promos || meta.promos.length === 0) && <div className="muted">Belum ada promo aktif.</div>}
+                  {(!meta?.promos || meta.promos.length === 0) && (
+                    <div className="muted">Belum ada promo aktif.</div>
+                  )}
                 </div>
 
                 <div className="hr" />
 
-                {/* MENU */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <h3 style={{ margin: 0 }}>Menu</h3>
-                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <span className="muted" style={{ fontSize: 12 }}>
-                      Sync: {metaSyncAt ? metaSyncAt.toLocaleTimeString("id-ID") : "-"}
-                    </span>
-                    <button className="btn secondary" type="button" onClick={() => loadMeta({ silent: false })}>
-                      Sync
-                    </button>
-                  </div>
-                </div>
-
-                {metaSyncErr ? (
-                  <div className="muted" style={{ marginTop: 8, color: "#b00020" }}>
-                    Sync error: {metaSyncErr}
-                  </div>
-                ) : null}
-
-                <div className="grid-products">
-                  {meta?.products?.map((p) => (
-                    <div key={p.id} className="prod">
-                      <b>{p.name}</b>
-                      <small>Kecil {rupiah(p.priceSmall)} • Besar {rupiah(p.priceLarge)}</small>
-
-                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                        <button className="btn secondary" type="button" onClick={() => addProduct(p, "SMALL")}>Kecil</button>
-                        <button className="btn secondary" type="button" onClick={() => addProduct(p, "LARGE")}>Besar</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="hr" />
-
-                {/* CART */}
-                <h3>Keranjang</h3>
-
-                {cart.length === 0 ? (
-                  <div className="muted">Belum ada item.</div>
-                ) : (
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Item</th>
-                        <th style={{ width: 120 }}>Qty</th>
-                        <th style={{ width: 140 }}>Subtotal</th>
-                        <th style={{ width: 80 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {cart.map((it) => (
-                        <tr key={it.key}>
-                          <td>
-                            <div><b>{it.name}</b></div>
-                            <div style={{ marginTop: 6 }}>
-                              <input
-                                className="input"
-                                placeholder="Catatan (level pedas/mix saus)"
-                                value={it.itemNote}
-                                onChange={(e) =>
-                                  setCart((prev) =>
-                                    prev.map((x) =>
-                                      x.key === it.key ? { ...x, itemNote: e.target.value } : x
-                                    )
-                                  )
-                                }
-                              />
-                            </div>
-                          </td>
-                          <td>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <button className="btn secondary" onClick={() => updateQty(it.key, -1)}>-</button>
-                              <div style={{ minWidth: 28, textAlign: "center", paddingTop: 10 }}>{it.qty}</div>
-                              <button className="btn secondary" onClick={() => updateQty(it.key, +1)}>+</button>
-                            </div>
-                          </td>
-                          <td>{rupiah(it.price * it.qty)}</td>
-                          <td>
-                            <button className="btn danger" onClick={() => removeItem(it.key)}>X</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-
-                <div className="hr" />
-
-                {/* ✅ INPUT NAMA + TOMBOL TAMBAH ANTRIAN */}
-                <h3>Tambah ke Antrian</h3>
                 <div className="row">
                   <div className="col">
-                    <label>Nama pelanggan (unik)</label>
+                    <label>Diskon Manual (Rp)</label>
                     <input
                       className="input"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="contoh: Budi / Teh Rina"
+                      type="number"
+                      value={checkout.manualDiscount}
+                      onChange={(e) =>
+                        setCheckout((p) => ({ ...p, manualDiscount: e.target.value }))
+                      }
                     />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 10 }}>
-                  <button className="btn secondary" onClick={enqueueOrder} disabled={!customerName || cart.length === 0}>
-                    Tambah ke Antrian (Belum Dibayar)
-                  </button>
-                </div>
-
-                <div className="hr" />
-
-                {/* TRANSAKSI LANGSUNG (tetap ada) */}
-                <h3>Selesaikan Langsung</h3>
-                <div className="row">
-                  <div className="col">
-                    <label>Diskon (Rp)</label>
-                    <input className="input" type="number" value={discount} onChange={(e) => setDiscount(e.target.value)} />
                   </div>
                   <div className="col">
                     <label>Metode Bayar</label>
-                    <select className="input" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                    <select
+                      className="input"
+                      value={checkout.paymentMethod}
+                      onChange={(e) =>
+                        setCheckout((p) => ({ ...p, paymentMethod: e.target.value }))
+                      }
+                    >
                       <option value="CASH">CASH</option>
                       <option value="QRIS">QRIS</option>
                     </select>
@@ -753,312 +1251,65 @@ export default function CashierPOS() {
                 </div>
 
                 <div style={{ marginTop: 12 }}>
-                  <label>Catatan transaksi / antrian (opsional)</label>
-                  <textarea className="input" rows="2" value={note} onChange={(e) => setNote(e.target.value)} />
+                  <label>Catatan (opsional)</label>
+                  <textarea
+                    className="input"
+                    rows="2"
+                    value={checkout.note}
+                    onChange={(e) => setCheckout((p) => ({ ...p, note: e.target.value }))}
+                  />
                 </div>
 
                 <div className="hr" />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
                   <div>
-                    <div className="muted">Total</div>
-                    <div style={{ fontSize: 22 }}><b>{rupiah(netTotal)}</b></div>
-                  </div>
-                  <button className="btn" onClick={submitSale} disabled={cart.length === 0}>Selesaikan</button>
-                </div>
-
-                <div className="hr" />
-
-                {/* CASH MOVES */}
-                <h3>Cash In/Out (Shift)</h3>
-                <div className="row">
-                  <div className="col">
-                    <label>Jenis</label>
-                    <select className="input" value={cashMoveType} onChange={(e) => setCashMoveType(e.target.value)}>
-                      <option value="CASH_IN">CASH IN (Tambah kas)</option>
-                      <option value="CASH_OUT">CASH OUT (Pengeluaran)</option>
-                    </select>
-                  </div>
-                  <div className="col">
-                    <label>Nominal (Rp)</label>
-                    <input className="input" type="number" value={cashMoveAmount} onChange={(e) => setCashMoveAmount(e.target.value)} />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <label>Catatan</label>
-                  <input className="input" value={cashMoveNote} onChange={(e) => setCashMoveNote(e.target.value)} placeholder="contoh: beli gas / tambah kembalian" />
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <button className="btn secondary" onClick={submitCashMovement} disabled={!cashMoveAmount || Number(cashMoveAmount) <= 0}>
-                    Simpan Cash Movement
-                  </button>
-                </div>
-
-                <div className="hr" />
-                <h3>Ringkasan Shift</h3>
-                {summary ? (
-                  <div className="row">
-                    <div className="col">
-                      <div className="card">
-                        <div className="muted">Modal Awal</div>
-                        <div><b>{rupiah(summary.openingCash)}</b></div>
-                        <div className="muted" style={{ marginTop: 10 }}>Penjualan CASH</div>
-                        <div><b>{rupiah(summary.cashSales)}</b></div>
-                        <div className="muted" style={{ marginTop: 10 }}>Penjualan QRIS</div>
-                        <div><b>{rupiah(summary.qrisSales)}</b></div>
-                      </div>
+                    <div className="muted">Gross</div>
+                    <div>
+                      <b>{rupiah(openOrder.grossTotal || 0)}</b>
                     </div>
-                    <div className="col">
-                      <div className="card">
-                        <div className="muted">Cash IN</div>
-                        <div><b>{rupiah(summary.cashIn)}</b></div>
-                        <div className="muted" style={{ marginTop: 10 }}>Cash OUT</div>
-                        <div><b>{rupiah(summary.cashOut)}</b></div>
-                        <div className="muted" style={{ marginTop: 10 }}>Expected Cash</div>
-                        <div style={{ fontSize: 18 }}><b>{rupiah(summary.expectedCash)}</b></div>
-                      </div>
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      Diskon Promo
+                    </div>
+                    <div>
+                      <b>{rupiah(checkoutPromoDiscount)}</b>
+                    </div>
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      Net
+                    </div>
+                    <div style={{ fontSize: 22 }}>
+                      <b>{rupiah(checkoutNetTotal)}</b>
                     </div>
                   </div>
-                ) : <div className="muted">Belum ada ringkasan.</div>}
 
-                <div className="hr" />
-                <h3>Riwayat Cash Movement</h3>
-                {movements.length ? (
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Waktu</th>
-                        <th>Jenis</th>
-                        <th>Nominal</th>
-                        <th>Catatan</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {movements.slice(0, 10).map((m) => (
-                        <tr key={m.id}>
-                          <td>{new Date(m.createdAt).toLocaleTimeString("id-ID")}</td>
-                          <td><span className="badge">{m.type}</span></td>
-                          <td><b>{rupiah(m.amount)}</b></td>
-                          <td className="muted">{m.note || "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : <div className="muted">Belum ada cash in/out.</div>}
-
-                <div className="hr" />
-                <h3>Tutup Shift</h3>
-                <label>Kas fisik saat tutup (Rp)</label>
-                <input className="input" type="number" value={closingCash} onChange={(e) => setClosingCash(e.target.value)} />
-                <div style={{ marginTop: 10 }}>
-                  <button className="btn danger" onClick={closeShift}>Tutup Shift</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* RIGHT: QUEUE LIST */}
-        <div style={{ flex: 0.95, minWidth: 320 }}>
-          <div className="card">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0 }}>Antrian Pesanan</h3>
-              <button className="btn secondary" onClick={loadQueue} disabled={qLoading}>
-                {qLoading ? "Loading..." : "Refresh"}
-              </button>
-            </div>
-
-            <div className="muted" style={{ marginTop: 8 }}>
-              Pesanan yang sudah masuk antrian belum dibayar. Klik untuk buka & selesaikan.
-            </div>
-
-            {qErr ? (
-              <div className="toast" style={{ background: "#ffecec", borderColor: "#ffbdbd", marginTop: 12 }}>
-                {qErr}
-              </div>
-            ) : null}
-
-            <div className="hr" />
-
-            {!queue.length ? (
-              <div className="muted">Belum ada antrian.</div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {queue.map((o) => (
                   <div
-                    key={o.id}
-                    className="card"
-                    style={{ cursor: "pointer" }}
-                    onClick={() => openOrderModal(o.id)}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                    }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 16 }}><b>{o.customerName}</b></div>
-                        <div className="muted" style={{ fontSize: 12 }}>
-                          {new Date(o.createdAt).toLocaleTimeString("id-ID")} • {o.itemCount || 0} item
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div className="muted" style={{ fontSize: 12 }}>Estimasi</div>
-                        <div><b>{rupiah(o.grossTotal || 0)}</b></div>
-                      </div>
-                    </div>
+                    <button className="btn danger" onClick={() => cancelOrder(openOrder.id)}>
+                      Batalkan Order
+                    </button>
+                    <button className="btn" onClick={() => checkoutOrder(openOrder.id)}>
+                      Selesaikan & Bayar
+                    </button>
                   </div>
-                ))}
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          ) : null}
         </div>
       </div>
-
-      {/* MODAL CHECKOUT ORDER */}
-      {modalOpen && openOrder ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-            zIndex: 9999,
-          }}
-          onClick={() => { setModalOpen(false); setOpenOrder(null); }}
-        >
-          <div
-            className="card"
-            style={{ width: "min(920px, 96vw)", maxHeight: "88vh", overflow: "auto" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-              <div>
-                <h3 style={{ margin: 0 }}>Checkout: {openOrder.customerName}</h3>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  Dibuat: {new Date(openOrder.createdAt).toLocaleString("id-ID")}
-                </div>
-              </div>
-              <button className="btn secondary" onClick={() => { setModalOpen(false); setOpenOrder(null); }}>
-                Tutup
-              </button>
-            </div>
-
-            <div className="hr" />
-
-            <h4 style={{ marginTop: 0 }}>Detail Item</h4>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Produk</th>
-                  <th style={{ width: 90 }}>Portion</th>
-                  <th style={{ width: 90 }}>Qty</th>
-                  <th style={{ width: 140 }}>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(openOrder.items || []).map((it) => (
-                  <tr key={it.id}>
-                    <td>
-                      <b>{it.product?.name || "(Produk)"}</b>
-                      {it.itemNote ? <div className="muted" style={{ fontSize: 12 }}>{it.itemNote}</div> : null}
-                    </td>
-                    <td><span className="badge">{it.portion}</span></td>
-                    <td>{it.qty}</td>
-                    <td><b>{rupiah(Number(it.price || 0) * Number(it.qty || 0))}</b></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className="hr" />
-
-            <h4 style={{ marginTop: 0 }}>Promo (opsional)</h4>
-            <div className="grid-products">
-              {(meta?.promos || []).map((p) => {
-                const active = checkout.promoIds.includes(p.id);
-                return (
-                  <div key={p.id} className="prod" style={{ opacity: p.isActive === false ? 0.6 : 1 }}>
-                    <b>{p.name}</b>
-                    <small className="muted">
-                      {p.type === "DISCOUNT_PERCENT"
-                        ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(p.minSubtotal || 0)})`
-                        : `Bonus x${p.bonusQty || 0} (Min ${rupiah(p.minSubtotal || 0)})`}
-                    </small>
-                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                      <button
-                        className={active ? "btn" : "btn secondary"}
-                        type="button"
-                        onClick={() => toggleCheckoutPromo(p.id)}
-                      >
-                        {active ? "Dipakai" : "Pakai"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {(!meta?.promos || meta.promos.length === 0) && <div className="muted">Belum ada promo aktif.</div>}
-            </div>
-
-            <div className="hr" />
-
-            <div className="row">
-              <div className="col">
-                <label>Diskon Manual (Rp)</label>
-                <input
-                  className="input"
-                  type="number"
-                  value={checkout.manualDiscount}
-                  onChange={(e) => setCheckout((p) => ({ ...p, manualDiscount: e.target.value }))}
-                />
-              </div>
-              <div className="col">
-                <label>Metode Bayar</label>
-                <select
-                  className="input"
-                  value={checkout.paymentMethod}
-                  onChange={(e) => setCheckout((p) => ({ ...p, paymentMethod: e.target.value }))}
-                >
-                  <option value="CASH">CASH</option>
-                  <option value="QRIS">QRIS</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <label>Catatan (opsional)</label>
-              <textarea
-                className="input"
-                rows="2"
-                value={checkout.note}
-                onChange={(e) => setCheckout((p) => ({ ...p, note: e.target.value }))}
-              />
-            </div>
-
-            <div className="hr" />
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-              <div>
-                <div className="muted">Gross</div>
-                <div><b>{rupiah(openOrder.grossTotal || 0)}</b></div>
-                <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
-                <div><b>{rupiah(checkoutPromoDiscount)}</b></div>
-                <div className="muted" style={{ marginTop: 6 }}>Net</div>
-                <div style={{ fontSize: 22 }}><b>{rupiah(checkoutNetTotal)}</b></div>
-              </div>
-
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <button className="btn danger" onClick={() => cancelOrder(openOrder.id)}>
-                  Batalkan Order
-                </button>
-                <button className="btn" onClick={() => checkoutOrder(openOrder.id)}>
-                  Selesaikan & Bayar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
