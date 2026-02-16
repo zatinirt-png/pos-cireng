@@ -19,10 +19,13 @@ export default function CashierLogin() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function login(e) {
     e.preventDefault();
+    if (loading) return;
     setErr("");
+    setLoading(true);
     try {
       const res = await apiPost("/api/auth/login", { username, password });
       if (res.role !== "CASHIER") throw new Error("Akun ini bukan CASHIER.");
@@ -34,6 +37,8 @@ export default function CashierLogin() {
       nav("/cashier/pos");
     } catch (e2) {
       setErr(e2.message);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -112,6 +117,7 @@ export default function CashierLogin() {
                     onChange={(e) => setUsername(e.target.value)}
                     autoComplete="username"
                     required
+                    disabled={loading}
                   />
                 </div>
 
@@ -125,12 +131,26 @@ export default function CashierLogin() {
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="current-password"
                     required
+                    disabled={loading}
                   />
                 </div>
 
-                <button className="auth-btn auth-btn--cashier" type="submit" disabled={!username || !password}>
-                  <span>Masuk</span>
-                  <span aria-hidden="true">→</span>
+                <button
+                  className="auth-btn auth-btn--cashier"
+                  type="submit"
+                  disabled={!username || !password || loading}
+                >
+                  {loading ? (
+                    <>
+                      <span className="spinner spinner--sm" aria-hidden="true" />
+                      <span>Memproses…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Masuk</span>
+                      <span aria-hidden="true">→</span>
+                    </>
+                  )}
                 </button>
 
                 <div className="auth-hint">Jika lupa password, hubungi Admin.</div>

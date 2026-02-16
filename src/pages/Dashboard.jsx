@@ -4,7 +4,6 @@ import { socket, connectSocket, disconnectSocket } from "../socket";
 import { useNavigate } from "react-router-dom";
 import { formatDateWIB } from "../lib/datetime";
 
-
 function rupiah(amount) {
   const n = Number(amount || 0);
   if (!Number.isFinite(n)) return "Rp 0,00";
@@ -21,12 +20,14 @@ export default function Dashboard() {
   const token = localStorage.getItem("admin_token");
   const [report, setReport] = useState(null);
   const [err, setErr] = useState("");
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   async function load() {
     setErr("");
     try {
       const r = await apiGet("/api/reports/today", token);
       setReport(r);
+      setUpdatedAt(new Date());
     } catch (e) {
       setErr(e.message);
     }
@@ -47,12 +48,7 @@ export default function Dashboard() {
 
     // 3) listen event dari server
     const onInvalidate = () => load();
-
     socket.on("reports:invalidate", onInvalidate);
-
-    // optional: log connect status (hapus kalau tidak perlu)
-    // socket.on("connect", () => console.log("socket connected", socket.id));
-    // socket.on("disconnect", () => console.log("socket disconnected"));
 
     // 4) fallback polling (jaga-jaga socket putus)
     const t = setInterval(() => load(), 15000);
@@ -88,137 +84,231 @@ export default function Dashboard() {
     return arr;
   }, [report]);
 
+  const updatedText = updatedAt
+    ? updatedAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+    : "-";
+
   return (
-    <div className="container">
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Live Report</h2>
-            <div className="muted">Tanggal: {formatDateWIB(report?.date) || "-"}</div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn secondary" onClick={() => nav("/admin/products")}>Menu</button>
-            <button className="btn secondary" onClick={() => nav("/admin/promos")}>Promo</button>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn secondary" onClick={() => nav("/admin/users")}>User Management</button>
-              <button className="btn secondary" onClick={() => nav("/admin/carts")}>
-                Kelola Gerobak
-              </button>
+    <div className="adm-bg adm">
+      <div className="adm-shell">
+        <div className="adm-layout">
+          {/* LEFT NAV */}
+          <aside className="adm-nav">
+            <div className="adm-nav-card">
+              <div className="adm-nav-title">Admin</div>
+              <div className="adm-nav-sub">Navigasi cepat</div>
 
-              <button className="btn secondary" onClick={logout}>Logout</button>
-            </div>
-
-          </div>
-
-        </div>
-
-        {err && (
-          <div className="toast" style={{ background: "#ffecec", borderColor: "#ffbdbd", marginTop: 12 }}>
-            {err}
-          </div>
-        )}
-
-        <div className="hr" />
-
-        <div className="row">
-          <div className="col">
-            <div className="card">
-              <div className="muted">Total Omzet</div>
-              <div style={{ fontSize: 26 }}><b>{rupiah(totalAll.total)}</b></div>
-              <div className="muted" style={{ marginTop: 6 }}>
-                CASH: <b>{rupiah(totalAll.cash)}</b> - QRIS: <b>{rupiah(totalAll.qris)}</b>
+              <div className="adm-nav-list">
+                <button
+                  className="adm-nav-item active"
+                  type="button"
+                  onClick={() => nav("/admin/dashboard")}
+                >
+                  Live Report
+                </button>
+                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/products")}>
+                  Menu
+                </button>
+                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/promos")}>
+                  Promo
+                </button>
+                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/users")}>
+                  User Management
+                </button>
+                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/carts")}>
+                  Kelola Gerobak
+                </button>
+                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/reports")}>
+                  Laporan
+                </button>
               </div>
-              <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>
-                *Dashboard update otomatis saat transaksi masuk.
+
+              <div className="adm-nav-foot">
+                <button className="btn secondary" type="button" onClick={logout}>
+                  Logout
+                </button>
               </div>
             </div>
-          </div>
+          </aside>
 
-          <div className="col">
-            <div className="card">
-              <h3 style={{ marginTop: 0 }}>Omzet per Gerobak</h3>
-              <table className="table" style={{ marginTop: 8 }}>
-                <thead>
-                  <tr>
-                    <th>Gerobak</th>
-                    <th>CASH</th>
-                    <th>QRIS</th>
-                    <th>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedPerCart.map(row => (
-                    <tr key={row.cartId}>
-                      <td><b>{row.cartName}</b></td>
-                      <td>{rupiah(row.cash)}</td>
-                      <td>{rupiah(row.qris)}</td>
-                      <td><b>{rupiah(row.total)}</b></td>
-                    </tr>
-                  ))}
-                  {!sortedPerCart.length && (
-                    <tr><td colSpan={4} className="muted">Belum ada data.</td></tr>
+          {/* MAIN */}
+          <main className="adm-main">
+            <div className="adm-main-card">
+              <div className="adm-header">
+                <div>
+                  <h2 className="adm-h2">Live Report</h2>
+                  <div className="adm-subline">
+                    <span className="muted">Tanggal: {formatDateWIB(report?.date) || "-"}</span>
+                    <span className="adm-dot">•</span>
+                    <span className="muted">Update: {updatedText}</span>
+                  </div>
+                </div>
+
+                <div className="adm-actions">
+                  <button className="btn secondary" type="button" onClick={load}>
+                    Refresh
+                  </button>
+                  <button className="btn secondary" type="button" onClick={() => nav("/admin/products")}>
+                    Menu
+                  </button>
+                  <button className="btn secondary" type="button" onClick={() => nav("/admin/promos")}>
+                    Promo
+                  </button>
+                </div>
+              </div>
+
+              {err ? (
+                <div className="adm-alert" role="alert" aria-live="polite">
+                  {err}
+                </div>
+              ) : null}
+
+              <div className="adm-panels">
+                {/* KPI */}
+                <section className="adm-panel adm-panel--kpi">
+                  <div className="adm-kpi-label">Total Omzet</div>
+                  <div className="adm-kpi-value">{rupiah(totalAll.total)}</div>
+                  <div className="adm-kpi-sub">
+                    <span>
+                      CASH: <b>{rupiah(totalAll.cash)}</b>
+                    </span>
+                    <span className="adm-dot">•</span>
+                    <span>
+                      QRIS: <b>{rupiah(totalAll.qris)}</b>
+                    </span>
+                  </div>
+                  <div className="adm-kpi-hint">*Update otomatis saat transaksi masuk (socket/polling).</div>
+                </section>
+
+                {/* PER CART */}
+                <section className="adm-panel">
+                  <div className="adm-panel-head">
+                    <h3 className="adm-h3">Omzet per Gerobak</h3>
+                    <span className="muted">Urut terbesar</span>
+                  </div>
+
+                  <div className="adm-table-wrap">
+                    <table className="table adm-table">
+                      <thead>
+                        <tr>
+                          <th>Gerobak</th>
+                          <th>CASH</th>
+                          <th>QRIS</th>
+                          <th>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedPerCart.map((row) => (
+                          <tr key={row.cartId}>
+                            <td data-label="Gerobak">
+                              <b>{row.cartName}</b>
+                            </td>
+                            <td data-label="CASH">{rupiah(row.cash)}</td>
+                            <td data-label="QRIS">{rupiah(row.qris)}</td>
+                            <td data-label="Total">
+                              <b>{rupiah(row.total)}</b>
+                            </td>
+                          </tr>
+                        ))}
+                        {!sortedPerCart.length && (
+                          <tr>
+                            <td data-label="Info" colSpan={4} className="muted">
+                              Belum ada data.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+
+                    </table>
+                  </div>
+                </section>
+              </div>
+
+              <div className="adm-panels">
+                {/* TOP PRODUCTS */}
+                <section className="adm-panel">
+                  <div className="adm-panel-head">
+                    <h3 className="adm-h3">Top Produk Hari Ini</h3>
+                    <span className="muted">Top 8</span>
+                  </div>
+
+                  {report?.topProducts?.length ? (
+                    <div className="adm-table-wrap">
+                      <table className="table adm-table">
+                        <thead>
+                          <tr>
+                            <th>Produk</th>
+                            <th style={{ width: 110 }}>Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.topProducts.slice(0, 8).map((tp) => (
+                            <tr key={`${tp.productId}-${tp.portion || ""}`}>
+                              <td data-label="Produk">
+                                {tp.productName || tp.name || "(Produk)"}
+                                {tp.portion ? <span className="muted"> ({tp.portion})</span> : null}
+                              </td>
+                              <td data-label="Qty">
+                                <b>{tp.qty}</b>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="muted">Belum ada penjualan.</div>
                   )}
-                </tbody>
-              </table>
+                </section>
+
+                {/* RECENT SALES */}
+                <section className="adm-panel">
+                  <div className="adm-panel-head">
+                    <h3 className="adm-h3">Transaksi Terbaru</h3>
+                    <span className="muted">Top 12</span>
+                  </div>
+
+                  {report?.recentSales?.length ? (
+                    <div className="adm-table-wrap">
+                      <table className="table adm-table">
+                        <thead>
+                          <tr>
+                            <th>Waktu</th>
+                            <th>Gerobak</th>
+                            <th style={{ width: 110 }}>Metode</th>
+                            <th style={{ width: 160 }}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.recentSales.slice(0, 12).map((s) => {
+                            const method = String(s.paymentMethod || s.method || "-").toUpperCase().trim();
+                            const badgeClass =
+                              method === "QRIS" ? "adm-badge adm-badge--qris" :
+                              method === "CASH" ? "adm-badge adm-badge--cash" :
+                              "adm-badge";
+
+                            return (
+                              <tr key={s.id}>
+                                <td data-label="Waktu">{new Date(s.createdAt).toLocaleTimeString("id-ID")}</td>
+                                <td data-label="Gerobak">{s.cartName}</td>
+                                <td data-label="Metode"><span className={badgeClass}>{method || "-"}</span></td>
+                                <td data-label="Total"><b>{rupiah(s.netTotal)}</b></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="muted">Belum ada transaksi.</div>
+                  )}
+                </section>
+              </div>
             </div>
-          </div>
+          </main>
         </div>
-
-        <div className="hr" />
-
-        <div className="row">
-          <div className="col">
-            <div className="card">
-              <h3 style={{ marginTop: 0 }}>Top Produk Hari Ini</h3>
-              {report?.topProducts?.length ? (
-                <table className="table">
-                  <thead>
-                    <tr><th>Produk</th><th>Qty</th></tr>
-                  </thead>
-                  <tbody>
-                    {report.topProducts.slice(0, 8).map(tp => (
-                      <tr key={`${tp.productId}-${tp.portion || ""}`}>
-                        <td>
-                          {tp.productName || tp.name || "(Produk)"}
-                          {tp.portion ? <span className="muted"> ({tp.portion})</span> : null}
-                        </td>
-                        <td><b>{tp.qty}</b></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="muted">Belum ada penjualan.</div>
-              )}
-            </div>
-          </div>
-
-          <div className="col">
-            <div className="card">
-              <h3 style={{ marginTop: 0 }}>Transaksi Terbaru</h3>
-              {report?.recentSales?.length ? (
-                <table className="table">
-                  <thead>
-                    <tr><th>Waktu</th><th>Gerobak</th><th>Metode</th><th>Total</th></tr>
-                  </thead>
-                  <tbody>
-                    {report.recentSales.slice(0, 12).map(s => (
-                      <tr key={s.id}>
-                        <td>{new Date(s.createdAt).toLocaleTimeString("id-ID")}</td>
-                        <td>{s.cartName}</td>
-                        <td><span className="badge">{s.paymentMethod || s.method || "-"}</span></td>
-                        <td><b>{rupiah(s.netTotal)}</b></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="muted">Belum ada transaksi.</div>
-              )}
-            </div>
-          </div>
-        </div>
-
       </div>
     </div>
   );

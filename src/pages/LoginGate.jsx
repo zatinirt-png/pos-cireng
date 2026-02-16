@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
+import logo from "../assets/cbur-logo.png";
 
 function IconCashier() {
   return (
@@ -53,92 +54,125 @@ export default function LoginGate() {
   const roles = [
     {
       key: "cashier",
-      title: "Login Kasir",
-      desc: "Mulai shift, input transaksi, checkout.",
-      bullets: ["Kelola transaksi harian", "Cetak struk & invoice"],
+      title: "Kasir",
+      desc: "Mulai shift, input transaksi, checkout cepat.",
+      bullets: ["Shift & transaksi harian", "Cetak struk / invoice"],
       cta: "Masuk sebagai Kasir",
       to: "/cashier",
-      tone: "kasir",
+      tone: "orange",
       Icon: IconCashier,
     },
     {
       key: "admin",
-      title: "Login Admin",
-      desc: "Kelola produk, promo, dan laporan.",
-      bullets: ["Update stok & harga", "Lihat laporan penjualan"],
+      title: "Admin",
+      desc: "Kelola produk, promo, dan laporan penjualan.",
+      bullets: ["Update stok & harga", "Laporan & monitoring"],
       cta: "Masuk sebagai Admin",
       to: "/admin",
-      tone: "admin",
+      tone: "red",
       Icon: IconAdmin,
     },
     {
       key: "partner",
-      title: "Login Mitra",
-      desc: "Laporan penjualan gerobak dan Live Report.",
-      bullets: ["Lihat omset realtime", "Pantau performa cabang"],
+      title: "Mitra",
+      desc: "Pantau omset gerobak & live report.",
+      bullets: ["Omset realtime", "Performa cabang"],
       cta: "Masuk sebagai Mitra",
       to: "/partner",
-      tone: "mitra",
+      tone: "amber",
       Icon: IconPartner,
     },
   ];
 
   return (
     <div className="gate-bg">
-      <div className="gate-shell">
-        <header className="gate-headline">
-          <h1 className="gate-headline-title">Selamat Datang di POS Cireng</h1>
-          <p className="gate-headline-sub">
-            Silakan pilih peran Anda untuk memulai.
-          </p>
-        </header>
-        
-          
-
-        {/* Main */}
-        <main className="gate-main">
-          <div className="gate-grid" role="list">
-            {roles.map(({ key, title, desc, bullets, cta, to, tone, Icon }) => (
-              <button
-                key={key}
-                type="button"
-                role="listitem"
-                className={`gate-card gate-${tone}`}
-                onClick={() => navigate(to)}
-              >
-                <div className="gate-card-top">
-                  <div className="gate-icon" aria-hidden="true">
-                    <Icon />
-                  </div>
-                  <div>
-                    <div className="gate-card-title">{title}</div>
-                    <div className="gate-card-desc">{desc}</div>
-                  </div>
+      <div className="gate-container">
+        <div className="gate-card">
+          <div className="gate-grid">
+            {/* Left */}
+            <section className="gate-left" aria-label="Informasi aplikasi">
+              <div className="gate-brand">
+                <img className="gate-logo" src={logo} alt="CBUR" />
+                <div>
+                  <h1 className="gate-title">POS Cireng</h1>
+                  <p className="gate-subtitle">
+                    Pilih peran untuk login. Desain ringan & cepat untuk kasir.
+                  </p>
                 </div>
+              </div>
 
-                <div className="gate-bullets">
-                  {bullets.map((b, i) => (
-                    <div key={i} className="gate-bullet">
-                      <span className="gate-dot" aria-hidden="true" />
-                      <span>{b}</span>
+              <div className="gate-divider" />
+
+              <p className="gate-prompt">Masuk sebagai</p>
+
+              <div className="gate-actions" role="list">
+                {roles.map(({ key, title, desc, bullets, cta, to, tone, Icon }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="listitem"
+                    className={`role-btn role-${tone}`}
+                    onClick={() => navigate(to)}
+                    aria-label={cta}
+                  >
+                    <div className="role-row">
+                      <div className={`role-icon role-tone-${tone}`} aria-hidden="true">
+                        <Icon />
+                      </div>
+
+                      <div className="role-content">
+                        <strong>{title}</strong>
+                        <small>{desc}</small>
+
+                        <div className="role-bullets" aria-hidden="true">
+                          {bullets.map((b, i) => (
+                            <span key={i} className="role-bullet">
+                              <span className="role-dot" />
+                              {b}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="role-cta" aria-hidden="true">
+                        <span className="role-ctaText">Masuk</span>
+                        <span className="role-arrow">→</span>
+                      </div>
                     </div>
-                  ))}
-                </div>
+                  </button>
+                ))}
+              </div>
 
-                <div className="gate-ctaRow">
-                  <span className="gate-cta">{cta}</span>
-                  <span className="gate-arrow" aria-hidden="true">→</span>
-                </div>
-              </button>
-            ))}
+              <div className="gate-divider" />
+
+              <div className="gate-meta">
+                
+                
+                <span className="muted">© 2026 POS Cireng</span>
+              </div>
+            </section>
+
+            {/* Right */}
+            <aside className="gate-right" aria-label="Tips cepat">
+              <div className="gate-info-card">
+                <h3 className="gate-info-title">Tips cepat</h3>
+                <ul className="gate-info-list">
+                  <li>Gunakan <b>Tab</b> untuk pindah field, <b>Enter</b> untuk submit.</li>
+                  <li>Menu ada di tombol <b>burger</b> kanan atas.</li>
+                  <li>Mode kasir: <b>Open Shift</b> dulu sebelum transaksi.</li>
+                </ul>
+              </div>
+
+              <div className="gate-info-card">
+                <h3 className="gate-info-title">Keamanan</h3>
+                <ul className="gate-info-list">
+                  <li>Logout jika perangkat dipakai bergantian.</li>
+                  <li>Pastikan jaringan stabil saat checkout.</li>
+                </ul>
+              </div>
+            </aside>
           </div>
-
-          <footer className="gate-footer">
-            <span>© 2026</span>
-            <span className="gate-footer-dot">•</span>
-            <span>POS Cireng</span>
-          </footer>
-        </main>
+        </div>
       </div>
     </div>
   );

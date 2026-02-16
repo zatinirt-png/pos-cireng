@@ -46,7 +46,8 @@ async function downloadWithAuth(path, token, fallbackName) {
 
 export default function AdminReports() {
   const nav = useNavigate();
-  const token = localStorage.getItem("admin_token") || localStorage.getItem("auth_token");
+  const token =
+    localStorage.getItem("admin_token") || localStorage.getItem("auth_token");
 
   const [carts, setCarts] = useState([]);
   const [period, setPeriod] = useState("day"); // day | week
@@ -57,6 +58,8 @@ export default function AdminReports() {
   const [loadingCarts, setLoadingCarts] = useState(false);
   const [loadingReport, setLoadingReport] = useState(false);
   const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const [showAllSales, setShowAllSales] = useState(false);
 
   useEffect(() => {
     if (!token) nav("/admin");
@@ -64,6 +67,7 @@ export default function AdminReports() {
 
   async function loadCarts() {
     setErr("");
+    setMsg("");
     setLoadingCarts(true);
     try {
       const r = await apiGet("/api/admin/carts", token);
@@ -80,9 +84,12 @@ export default function AdminReports() {
   async function loadReport(cartId = activeCartId) {
     if (!cartId) return;
     setErr("");
+    setMsg("");
     setLoadingReport(true);
     try {
-      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(date)}`;
+      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(
+        date
+      )}`;
       const r = await apiGet(`/api/reports/cart/${cartId}${qs}`, token);
       setReport(r);
     } catch (e) {
@@ -109,14 +116,28 @@ export default function AdminReports() {
     [carts, activeCartId]
   );
 
-  // ✅ FIX: export pakai fetch + Authorization header (bukan window.open)
+  const totals = report?.totals || report?.totalAll || {};
+  const sales = report?.sales || [];
+  const topProducts = report?.topProducts || [];
+  const periodLabel = period === "week" ? "MINGGU" : "HARI";
+
+  const visibleSales = showAllSales ? sales : sales.slice(0, 20);
+
   async function exportCsv() {
     if (!activeCartId) return;
     setErr("");
+    setMsg("");
     try {
-      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(date)}`;
+      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(
+        date
+      )}`;
       const fallback = `report_${activeCartId}_${period}_${date}.csv`;
-      await downloadWithAuth(`/api/reports/cart/${activeCartId}/export.csv${qs}`, token, fallback);
+      await downloadWithAuth(
+        `/api/reports/cart/${activeCartId}/export.csv${qs}`,
+        token,
+        fallback
+      );
+      setMsg("Export CSV dimulai.");
     } catch (e) {
       setErr(e?.message || "Gagal export CSV");
     }
@@ -125,160 +146,343 @@ export default function AdminReports() {
   async function exportPdf() {
     if (!activeCartId) return;
     setErr("");
+    setMsg("");
     try {
-      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(date)}`;
+      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(
+        date
+      )}`;
       const fallback = `report_${activeCartId}_${period}_${date}.pdf`;
-      await downloadWithAuth(`/api/reports/cart/${activeCartId}/export.pdf${qs}`, token, fallback);
+      await downloadWithAuth(
+        `/api/reports/cart/${activeCartId}/export.pdf${qs}`,
+        token,
+        fallback
+      );
+      setMsg("Export PDF dimulai.");
     } catch (e) {
       setErr(e?.message || "Gagal export PDF");
     }
   }
 
   return (
-    <div className="container">
-      <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-          <div>
-            <h2 style={{ margin: 0 }}>Laporan (Admin)</h2>
-            <div className="muted">Pilih gerobak → lihat laporan harian / mingguan → export PDF / CSV.</div>
-          </div>
-          <button className="btn secondary" onClick={() => nav("/admin/dashboard")}>Kembali</button>
-        </div>
+    <div className="adm-bg adm adm-reports">
+      <div className="adm-shell">
+        <div className="adm-layout">
+          {/* SIDEBAR */}
+          <aside className="adm-nav">
+            <div className="adm-nav-card">
+              <div className="adm-nav-title">Admin</div>
+              <div className="adm-nav-sub">Laporan</div>
 
-        {err ? (
-          <div className="toast" style={{ background: "#ffecec", borderColor: "#ffbdbd", marginTop: 12 }}>
-            {err}
-          </div>
-        ) : null}
-
-        <div className="hr" />
-
-        <div className="row" style={{ alignItems: "end" }}>
-          <div className="col">
-            <label>Gerobak</label>
-            <select
-              className="input"
-              value={activeCartId}
-              onChange={(e) => setActiveCartId(e.target.value)}
-              disabled={loadingCarts}
-            >
-              {carts.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.isActive === false ? "(INACTIVE)" : ""}
-                </option>
-              ))}
-              {!carts.length ? <option value="">(Belum ada gerobak)</option> : null}
-            </select>
-            {loadingCarts ? <div className="muted" style={{ marginTop: 6 }}>Loading carts...</div> : null}
-          </div>
-
-          <div className="col">
-            <label>Periode</label>
-            <select className="input" value={period} onChange={(e) => setPeriod(e.target.value)}>
-              <option value="day">Per Hari</option>
-              <option value="week">Per Minggu</option>
-            </select>
-          </div>
-
-          <div className="col">
-            <label>Tanggal (WIB)</label>
-            <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
-
-          <div className="col" style={{ display: "flex", gap: 8 }}>
-            <button className="btn secondary" onClick={() => loadReport(activeCartId)} disabled={!activeCartId || loadingReport}>
-              {loadingReport ? "Loading..." : "Refresh"}
-            </button>
-            <button className="btn" onClick={exportCsv} disabled={!activeCartId}>Export CSV</button>
-            <button className="btn" onClick={exportPdf} disabled={!activeCartId}>Export PDF</button>
-          </div>
-        </div>
-
-        <div className="hr" />
-
-        {!report ? (
-          <div className="muted">Belum ada data laporan.</div>
-        ) : (
-          <>
-            <div className="row">
-              <div className="col">
-                <div className="card">
-                  <div className="muted">Gerobak</div>
-                  <div><b>{selectedCart?.name || report?.cart?.name || "-"}</b></div>
-                  <div className="muted" style={{ marginTop: 10 }}>Periode</div>
-                  <div><b>{String(report.period || period).toUpperCase()}</b></div>
-                  <div className="muted" style={{ marginTop: 10 }}>Tanggal (WIB)</div>
-                  <div><b>{report.date || date}</b></div>
-                </div>
+              <div className="adm-nav-list">
+                <button
+                  className="adm-nav-item"
+                  type="button"
+                  onClick={() => nav("/admin/dashboard")}
+                >
+                  Live Report
+                </button>
+                <button
+                  className="adm-nav-item"
+                  type="button"
+                  onClick={() => nav("/admin/products")}
+                >
+                  Menu
+                </button>
+                <button
+                  className="adm-nav-item"
+                  type="button"
+                  onClick={() => nav("/admin/promos")}
+                >
+                  Promo
+                </button>
+                <button
+                  className="adm-nav-item"
+                  type="button"
+                  onClick={() => nav("/admin/users")}
+                >
+                  User Management
+                </button>
+                <button
+                  className="adm-nav-item"
+                  type="button"
+                  onClick={() => nav("/admin/carts")}
+                >
+                  Kelola Gerobak
+                </button>
+                <button
+                  className="adm-nav-item active"
+                  type="button"
+                  onClick={() => nav("/admin/reports")}
+                >
+                  Laporan
+                </button>
               </div>
 
-              <div className="col">
-                <div className="card">
-                  <div className="muted">Total CASH</div>
-                  <div><b>{report.totals?.cash ?? report.totalAll?.cash ?? 0}</b></div>
-                  <div className="muted" style={{ marginTop: 10 }}>Total QRIS</div>
-                  <div><b>{report.totals?.qris ?? report.totalAll?.qris ?? 0}</b></div>
-                  <div className="muted" style={{ marginTop: 10 }}>Total</div>
-                  <div style={{ fontSize: 18 }}><b>{report.totals?.total ?? report.totalAll?.total ?? 0}</b></div>
-                </div>
-              </div>
-
-              <div className="col">
-                <div className="card">
-                  <div className="muted">Jumlah Transaksi</div>
-                  <div style={{ fontSize: 18 }}><b>{report.totals?.transactions ?? report.sales?.length ?? 0}</b></div>
-                  <div className="muted" style={{ marginTop: 10 }}>Top Produk (10)</div>
-                  <div className="muted">{(report.topProducts || []).length ? "" : "Belum ada."}</div>
-                  <ul style={{ marginTop: 8, paddingLeft: 18 }}>
-                    {(report.topProducts || []).slice(0, 10).map((p) => (
-                      <li key={`${p.productId}_${p.portion}`}>
-                        {p.productName} [{p.portion}] = <b>{p.qty}</b>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              <div className="adm-nav-foot">
+                <button
+                  className="btn secondary"
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem("admin_token");
+                    localStorage.removeItem("auth_token");
+                    nav("/admin");
+                  }}
+                >
+                  Logout
+                </button>
               </div>
             </div>
+          </aside>
 
-            <div className="hr" />
+          {/* MAIN */}
+          <main className="adm-main">
+            <div className="adm-main-card">
+              <div className="adm-header">
+                <div>
+                  <h2 className="adm-h2">Laporan</h2>
+                  <div className="adm-subline">
+                    <span className="muted">
+                      Pilih gerobak → laporan harian/mingguan → export PDF/CSV.
+                    </span>
+                  </div>
+                </div>
 
-            <h3 style={{ marginTop: 0 }}>Transaksi</h3>
-            {(report.sales || []).length ? (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Waktu</th>
-                    <th>Metode</th>
-                    <th>Gross</th>
-                    <th>Diskon</th>
-                    <th>Net</th>
-                    <th>Kasir</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.sales.slice(0, 20).map((s) => (
-                    <tr key={s.id}>
-                      <td>{new Date(s.createdAt).toLocaleString("id-ID")}</td>
-                      <td><span className="badge">{s.paymentMethod || "-"}</span></td>
-                      <td>{s.grossTotal}</td>
-                      <td>{s.discount}</td>
-                      <td><b>{s.netTotal}</b></td>
-                      <td className="muted">{s.cashier || "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <div className="muted">Belum ada transaksi di periode ini.</div>
-            )}
-
-            {(report.sales || []).length > 20 ? (
-              <div className="muted" style={{ marginTop: 10 }}>
-                Menampilkan 20 terbaru dari {report.sales.length} transaksi.
+                <div className="adm-actions">
+                  <button
+                    className="btn secondary"
+                    type="button"
+                    onClick={() => loadReport(activeCartId)}
+                    disabled={!activeCartId || loadingReport}
+                  >
+                    {loadingReport ? "Loading..." : "Refresh"}
+                  </button>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={exportCsv}
+                    disabled={!activeCartId}
+                  >
+                    Export CSV
+                  </button>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={exportPdf}
+                    disabled={!activeCartId}
+                  >
+                    Export PDF
+                  </button>
+                </div>
               </div>
-            ) : null}
-          </>
-        )}
+
+              {err ? (
+                <div
+                  className="adm-alert"
+                  role="alert"
+                  aria-live="polite"
+                  style={{ marginTop: 12 }}
+                >
+                  {err}
+                </div>
+              ) : null}
+
+              {msg ? (
+                <div
+                  className="adm-alert adm-alert--ok"
+                  role="status"
+                  aria-live="polite"
+                  style={{ marginTop: 12 }}
+                >
+                  {msg}
+                </div>
+              ) : null}
+
+              {/* FILTERS */}
+              <section className="adm-panel" style={{ marginTop: 14 }}>
+                <div className="adm-panel-head">
+                  <h3 className="adm-h3">Filter</h3>
+                  <span className="muted">WIB</span>
+                </div>
+
+                <div className="adm-report-filters">
+                  <div className="adm-field">
+                    <label>Gerobak</label>
+                    <select
+                      className="input"
+                      value={activeCartId}
+                      onChange={(e) => setActiveCartId(e.target.value)}
+                      disabled={loadingCarts}
+                    >
+                      {carts.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} {c.isActive === false ? "(INACTIVE)" : ""}
+                        </option>
+                      ))}
+                      {!carts.length ? (
+                        <option value="">(Belum ada gerobak)</option>
+                      ) : null}
+                    </select>
+                    {loadingCarts ? (
+                      <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                        Loading carts...
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="adm-field">
+                    <label>Periode</label>
+                    <select
+                      className="input"
+                      value={period}
+                      onChange={(e) => setPeriod(e.target.value)}
+                    >
+                      <option value="day">Per Hari</option>
+                      <option value="week">Per Minggu</option>
+                    </select>
+                  </div>
+
+                  <div className="adm-field">
+                    <label>Tanggal</label>
+                    <input
+                      className="input"
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </section>
+
+              {/* SUMMARY */}
+              {!report ? (
+                <div className="muted" style={{ marginTop: 12 }}>
+                  Belum ada data laporan.
+                </div>
+              ) : (
+                <>
+                  <section className="adm-report-stats" style={{ marginTop: 14 }}>
+                    <div className="adm-panel adm-report-card">
+                      <div className="muted">Gerobak</div>
+                      <div className="adm-report-title">
+                        <b>{selectedCart?.name || report?.cart?.name || "-"}</b>
+                      </div>
+                      <div className="adm-report-meta">
+                        <span className="adm-chip">
+                          {String(report.period || periodLabel).toUpperCase()}
+                        </span>
+                        <span className="adm-chip">{report.date || date}</span>
+                      </div>
+                    </div>
+
+                    <div className="adm-panel adm-report-card">
+                      <div className="muted">Total</div>
+                      <div className="adm-report-money">
+                        <b>{totals.total ?? 0}</b>
+                      </div>
+                      <div className="adm-report-split">
+                        <div>
+                          <div className="muted">CASH</div>
+                          <div><b>{totals.cash ?? 0}</b></div>
+                        </div>
+                        <div>
+                          <div className="muted">QRIS</div>
+                          <div><b>{totals.qris ?? 0}</b></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="adm-panel adm-report-card">
+                      <div className="muted">Jumlah Transaksi</div>
+                      <div className="adm-report-money">
+                        <b>{totals.transactions ?? sales.length ?? 0}</b>
+                      </div>
+                      <div className="muted" style={{ marginTop: 8 }}>
+                        Top Produk
+                      </div>
+                      {!topProducts.length ? (
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          Belum ada.
+                        </div>
+                      ) : (
+                        <ol className="adm-report-toplist">
+                          {topProducts.slice(0, 10).map((p) => (
+                            <li key={`${p.productId}_${p.portion}`}>
+                              <span className="adm-report-topname">{p.productName}</span>
+                              <span className="adm-badge">{p.portion}</span>
+                              <span className="adm-report-topqty">
+                                <b>{p.qty}</b>
+                              </span>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
+                  </section>
+
+                  {/* SALES */}
+                  <section className="adm-panel" style={{ marginTop: 14 }}>
+                    <div className="adm-panel-head">
+                      <h3 className="adm-h3">Transaksi</h3>
+                      <div className="adm-inline" style={{ gap: 10 }}>
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          {sales.length ? `${visibleSales.length} / ${sales.length}` : "0"}
+                        </span>
+                        {sales.length > 20 ? (
+                          <button
+                            type="button"
+                            className="btn secondary"
+                            onClick={() => setShowAllSales((v) => !v)}
+                          >
+                            {showAllSales ? "Tampilkan 20" : "Tampilkan Semua"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {!sales.length ? (
+                      <div className="muted">Belum ada transaksi di periode ini.</div>
+                    ) : (
+                      <div className="adm-report-list" role="list">
+                        {visibleSales.map((s) => (
+                          <div className="adm-report-item" key={s.id} role="listitem">
+                            <div className="adm-report-item-top">
+                              <div>
+                                <div className="adm-report-item-time">
+                                  {new Date(s.createdAt).toLocaleString("id-ID")}
+                                </div>
+                                <div className="adm-report-item-sub muted">
+                                  Kasir: {s.cashier || "-"}
+                                </div>
+                              </div>
+
+                              <div className="adm-report-item-badges">
+                                <span className="adm-badge">{s.paymentMethod || "-"}</span>
+                                <span className="adm-chip">
+                                  Gross: <b>{s.grossTotal}</b>
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="adm-report-item-bottom">
+                              <div className="adm-report-kv">
+                                <div className="muted">Diskon</div>
+                                <div><b>{s.discount}</b></div>
+                              </div>
+                              <div className="adm-report-kv">
+                                <div className="muted">Net</div>
+                                <div className="adm-report-net"><b>{s.netTotal}</b></div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );
