@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet } from "../api";
 import { socket, connectSocket, disconnectSocket } from "../socket";
 import { useNavigate } from "react-router-dom";
@@ -15,21 +15,86 @@ function rupiah(amount) {
   return sign + "Rp " + i + "," + d;
 }
 
+function normalizeCartReportToTodayShape(cartReport, fallbackCartId) {
+  // cartReport shape (backend):
+  // { period, date, cart:{id,name}, totals:{cash,qris,total,transactions}, sales:[...], topProducts:[...] }
+  const cartId = cartReport?.cart?.id || fallbackCartId || "";
+  const cartName = cartReport?.cart?.name || "(Gerobak)";
+
+  const totals = cartReport?.totals || {};
+  const cash = Number(totals.cash || 0);
+  const qris = Number(totals.qris || 0);
+  const total = Number(totals.total || 0);
+
+  const sales = Array.isArray(cartReport?.sales) ? cartReport.sales : [];
+  const recentSales = sales.slice(0, 12).map((s) => ({
+    id: s.id,
+    createdAt: s.createdAt,
+    cartId,
+    cartName,
+    paymentMethod: s.paymentMethod || "-",
+    netTotal: Number(s.netTotal || 0),
+  }));
+
+  return {
+    date: cartReport?.range?.start || cartReport?.date || new Date().toISOString(),
+    totalAll: { cash, qris, total },
+    perCart: [{ cartId, cartName, cash, qris, total }],
+    topProducts: Array.isArray(cartReport?.topProducts) ? cartReport.topProducts : [],
+    recentSales,
+  };
+}
+
 export default function Dashboard() {
   const nav = useNavigate();
   const token = localStorage.getItem("admin_token");
+
   const [report, setReport] = useState(null);
+  const [carts, setCarts] = useState([]);
+  const [cartFilter, setCartFilter] = useState("ALL"); // "ALL" | cartId
+
+  const cartFilterRef = useRef("ALL");
+  const didBootRef = useRef(false);
+
   const [err, setErr] = useState("");
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  async function load() {
-    setErr("");
+  useEffect(() => {
+    cartFilterRef.current = cartFilter;
+  }, [cartFilter]);
+
+  async function loadCarts({ silent = true } = {}) {
     try {
-      const r = await apiGet("/api/reports/today", token);
-      setReport(r);
+      const r = await apiGet("/api/admin/carts", token);
+      const list = Array.isArray(r?.carts) ? r.carts : [];
+      // default: hanya aktif (tapi tetap simpan semua biar bisa kalau admin mau lihat non-aktif nanti)
+      setCarts(list);
+    } catch (e) {
+      // carts gagal tidak mematikan dashboard, cukup abaikan (dropdown fallback ke perCart kalau ada)
+      if (!silent) setErr(e?.message || "Gagal load daftar gerobak");
+    }
+  }
+
+  async function load({ cartId, silent = false } = {}) {
+    const cid = cartId ?? cartFilterRef.current ?? "ALL";
+
+    if (!silent) setLoading(true);
+    setErr("");
+
+    try {
+      if (cid === "ALL") {
+        const r = await apiGet("/api/reports/today", token);
+        setReport(r);
+      } else {
+        const r = await apiGet(`/api/reports/cart/${cid}`, token);
+        setReport(normalizeCartReportToTodayShape(r, cid));
+      }
       setUpdatedAt(new Date());
     } catch (e) {
-      setErr(e.message);
+      setErr(e?.message || "Gagal load report");
+    } finally {
+      if (!silent) setLoading(false);
     }
   }
 
@@ -39,19 +104,22 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!token) return;
+    if (didBootRef.current) return; // cegah double init (StrictMode dev)
+    didBootRef.current = true;
 
-    // 1) initial load
-    load();
+    // 1) initial carts + report load
+    loadCarts({ silent: true });
+    load({ silent: false });
 
-    // 2) connect socket (karena autoConnect: false)
+    // 2) connect socket (autoConnect: false)
     connectSocket(token);
 
-    // 3) listen event dari server
-    const onInvalidate = () => load();
+    // 3) listen invalidate dari server → silent refresh (biar ringan)
+    const onInvalidate = () => load({ silent: true });
     socket.on("reports:invalidate", onInvalidate);
 
-    // 4) fallback polling (jaga-jaga socket putus)
-    const t = setInterval(() => load(), 15000);
+    // 4) fallback polling
+    const t = setInterval(() => load({ silent: true }), 15000);
 
     return () => {
       clearInterval(t);
@@ -66,6 +134,23 @@ export default function Dashboard() {
     disconnectSocket();
     nav("/admin");
   }
+
+  const cartOptions = useMemo(() => {
+    const active = (carts || []).filter((c) => (c.isActive ?? true) !== false);
+    if (active.length) return active.map((c) => ({ id: c.id, name: c.name }));
+
+    // fallback kalau carts belum kebaca: ambil dari report.perCart
+    const pc = Array.isArray(report?.perCart) ? report.perCart : [];
+    return pc.map((x) => ({ id: x.cartId, name: x.cartName }));
+  }, [carts, report]);
+
+  const cartLabel = useMemo(() => {
+    if (cartFilter === "ALL") return "Semua Gerobak";
+    const fromList = cartOptions.find((c) => c.id === cartFilter)?.name;
+    if (fromList) return fromList;
+    const pc0 = Array.isArray(report?.perCart) ? report.perCart[0] : null;
+    return pc0?.cartName || "(Gerobak)";
+  }, [cartFilter, cartOptions, report]);
 
   // NORMALISASI: kalau backend tidak kirim totalAll, hitung dari perCart
   const totalAll = useMemo(() => {
@@ -87,6 +172,13 @@ export default function Dashboard() {
   const updatedText = updatedAt
     ? updatedAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
     : "-";
+
+  async function handleCartChange(e) {
+    const v = e.target.value;
+    setCartFilter(v);
+    cartFilterRef.current = v;
+    await load({ cartId: v, silent: false });
+  }
 
   return (
     <div className="adm-bg adm">
@@ -141,19 +233,44 @@ export default function Dashboard() {
                     <span className="muted">Tanggal: {formatDateWIB(report?.date) || "-"}</span>
                     <span className="adm-dot">•</span>
                     <span className="muted">Update: {updatedText}</span>
+                    <span className="adm-dot">•</span>
+                    <span className="muted">
+                      Gerobak: <b>{cartLabel}</b>
+                    </span>
+                    {loading ? (
+                      <>
+                        <span className="adm-dot">•</span>
+                        <span className="muted">Loading…</span>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
                 <div className="adm-actions">
-                  <button className="btn secondary" type="button" onClick={load}>
+                  {/* FILTER GEROBak */}
+                  <div style={{ minWidth: 220, maxWidth: 320 }}>
+                    <label style={{ marginBottom: 6 }}>Pilih Gerobak</label>
+                    <select
+                      className="input"
+                      value={cartFilter}
+                      onChange={handleCartChange}
+                      disabled={loading}
+                      style={{ borderRadius: 16 }}
+                    >
+                      <option value="ALL">Semua Gerobak</option>
+                      {cartOptions.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button className="btn secondary" type="button" onClick={() => load({ silent: false })} disabled={loading}>
                     Refresh
                   </button>
-                  <button className="btn secondary" type="button" onClick={() => nav("/admin/products")}>
-                    Menu
-                  </button>
-                  <button className="btn secondary" type="button" onClick={() => nav("/admin/promos")}>
-                    Promo
-                  </button>
+                  
+                  
                 </div>
               </div>
 
@@ -183,8 +300,12 @@ export default function Dashboard() {
                 {/* PER CART */}
                 <section className="adm-panel">
                   <div className="adm-panel-head">
-                    <h3 className="adm-h3">Omzet per Gerobak</h3>
-                    <span className="muted">Urut terbesar</span>
+                    <h3 className="adm-h3">
+                      {cartFilter === "ALL" ? "Omzet per Gerobak" : `Omzet Gerobak`}
+                    </h3>
+                    <span className="muted">
+                      {cartFilter === "ALL" ? "Urut terbesar" : cartLabel}
+                    </span>
                   </div>
 
                   <div className="adm-table-wrap">
@@ -218,7 +339,6 @@ export default function Dashboard() {
                           </tr>
                         )}
                       </tbody>
-
                     </table>
                   </div>
                 </section>
@@ -254,7 +374,6 @@ export default function Dashboard() {
                             </tr>
                           ))}
                         </tbody>
-
                       </table>
                     </div>
                   ) : (
@@ -284,21 +403,28 @@ export default function Dashboard() {
                           {report.recentSales.slice(0, 12).map((s) => {
                             const method = String(s.paymentMethod || s.method || "-").toUpperCase().trim();
                             const badgeClass =
-                              method === "QRIS" ? "adm-badge adm-badge--qris" :
-                              method === "CASH" ? "adm-badge adm-badge--cash" :
-                              "adm-badge";
+                              method === "QRIS"
+                                ? "adm-badge adm-badge--qris"
+                                : method === "CASH"
+                                ? "adm-badge adm-badge--cash"
+                                : "adm-badge";
 
                             return (
                               <tr key={s.id}>
-                                <td data-label="Waktu">{new Date(s.createdAt).toLocaleTimeString("id-ID")}</td>
+                                <td data-label="Waktu">
+                                  {new Date(s.createdAt).toLocaleTimeString("id-ID")}
+                                </td>
                                 <td data-label="Gerobak">{s.cartName}</td>
-                                <td data-label="Metode"><span className={badgeClass}>{method || "-"}</span></td>
-                                <td data-label="Total"><b>{rupiah(s.netTotal)}</b></td>
+                                <td data-label="Metode">
+                                  <span className={badgeClass}>{method || "-"}</span>
+                                </td>
+                                <td data-label="Total">
+                                  <b>{rupiah(s.netTotal)}</b>
+                                </td>
                               </tr>
                             );
                           })}
                         </tbody>
-
                       </table>
                     </div>
                   ) : (

@@ -433,6 +433,41 @@ textarea:focus-visible{
 
 .btn.danger{ background: var(--pos-danger); }
 
+/* Button size helpers */
+.btn--sm{ padding: 9px 12px; border-radius: var(--r-md); font-size: 12px; }
+
+/* Tabs */
+.tabs{
+  display:flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.62);
+  border: 1px solid var(--pos-border);
+}
+.tab{
+  appearance:none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(20,20,20,0.78);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 950;
+  cursor:pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease, box-shadow 140ms ease;
+}
+.tab:hover{ border-color: var(--pos-border-strong); }
+.tab:active{ transform: translateY(1px); }
+.tab[aria-selected="true"]{
+  background: rgba(252,239,145,0.55);
+  border-color: rgba(225,205,169,0.55);
+  color: rgba(20,20,20,0.88);
+  box-shadow: 0 14px 40px rgba(15,23,42,0.10);
+}
+
+
 .input, select, textarea{
   width: 100%;
   padding: 11px 12px;
@@ -462,6 +497,10 @@ label{ font-size: 12px; opacity: 0.8; display: block; margin-bottom: 6px; }
   font-weight: 900;
 }
 .badge--neutral{ background: rgba(255,255,255,0.70); border-color: var(--pos-border); color: rgba(20,20,20,0.82); }
+.badge--accent1{ background: rgba(251,158,58,0.18); border-color: rgba(251,158,58,0.30); color: rgba(20,20,20,0.86); }
+.badge--accent2{ background: rgba(255,176,1,0.20); border-color: rgba(255,176,1,0.32); color: rgba(20,20,20,0.86); }
+.badge--danger{ background: rgba(234,47,20,0.14); border-color: rgba(234,47,20,0.28); color: rgba(20,20,20,0.90); }
+
 
 /* ==========================================================================
    LOGIN GATE (pages/LoginGate.jsx)

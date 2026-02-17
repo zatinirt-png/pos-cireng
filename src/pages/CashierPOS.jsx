@@ -2,6 +2,7 @@
 import { apiGet, apiPost } from "../api";
 import { useNavigate } from "react-router-dom";
 import LoadingScreen from "../components/ui/LoadingScreen";
+import Tabs from "../components/ui/Tabs";
 
 function rupiah(amount) {
   const n = Number(amount || 0);
@@ -102,9 +103,26 @@ export default function CashierPOS() {
   // ===== BOOT LOADING =====
   const [booting, setBooting] = useState(true);
 
+  // ===== POS TABS (ringkas halaman) =====
+  const [mainTab, setMainTab] = useState("SELL"); // SELL | CASH | SHIFT
+  const [cashTab, setCashTab] = useState("ALL"); // ALL | CASH_IN | CASH_OUT
+
+  // ===== CLOSE SHIFT MODAL =====
+  const [closeShiftOpen, setCloseShiftOpen] = useState(false);
+  const [closeShiftBusy, setCloseShiftBusy] = useState(false);
+
   useEffect(() => {
     if (!token) nav("/cashier");
   }, [token, nav]);
+
+  useEffect(() => {
+    if (!shift) {
+      setMainTab("SELL");
+      setCashTab("ALL");
+      setCloseShiftOpen(false);
+      setCloseShiftBusy(false);
+    }
+  }, [shift]);
 
   async function load({ boot = false } = {}) {
     setErr("");
@@ -268,7 +286,11 @@ export default function CashierPOS() {
     setErr("");
     setMsg("");
     try {
-      const res = await apiPost("/api/shifts/open", { openingCash }, token);
+      const res = await apiPost(
+        "/api/shifts/open",
+        { openingCash: Number(openingCash || 0) },
+        token
+      );
       setShift(res.shift);
 
       const sum = await apiGet("/api/shifts/summary", token);
@@ -294,16 +316,17 @@ export default function CashierPOS() {
 
       await apiPost("/api/shifts/close", { closingCash: closing }, token);
 
+      // reset local state
       setShift(null);
+      setSummary(null);
+      setMovements([]);
       setCart([]);
       setPromoIds([]);
+      setCustomerName("");
       setDiscount(0);
       setPaymentMethod("CASH");
       setNote("");
       setClosingCash(0);
-
-      setSummary(null);
-      setMovements([]);
 
       if (expected == null) {
         setMsg("Shift ditutup.");
@@ -321,8 +344,10 @@ export default function CashierPOS() {
             ")"
         );
       }
+      return true;
     } catch (e) {
       setErr(e?.message || "Gagal tutup shift");
+      return false;
     }
   }
 
@@ -354,7 +379,12 @@ export default function CashierPOS() {
         setSummary(sum.summary);
       } catch (_) {}
 
-      setMsg("Transaksi sukses. ID: " + res.saleId + " | Total: " + rupiah(res.netTotal));
+      setMsg(
+        "Transaksi sukses. ID: " +
+          res.saleId +
+          " | Total: " +
+          rupiah(res.netTotal)
+      );
 
       setCart([]);
       setPromoIds([]);
@@ -376,7 +406,10 @@ export default function CashierPOS() {
       if (!cn) throw new Error("Nama pelanggan wajib diisi.");
 
       const dup = (queue || []).some(
-        (q) => String(q.customerName || "").trim().toLowerCase() === cn.toLowerCase()
+        (q) =>
+          String(q.customerName || "")
+            .trim()
+            .toLowerCase() === cn.toLowerCase()
       );
       if (dup) throw new Error("Nama pelanggan sudah ada di antrian.");
 
@@ -501,7 +534,12 @@ export default function CashierPOS() {
         setMovements(mv.movements);
       } catch (_) {}
 
-      setMsg("Checkout sukses. ID: " + res.saleId + " | Total: " + rupiah(res.netTotal));
+      setMsg(
+        "Checkout sukses. ID: " +
+          res.saleId +
+          " | Total: " +
+          rupiah(res.netTotal)
+      );
 
       setModalOpen(false);
       setOpenOrder(null);
@@ -545,6 +583,98 @@ export default function CashierPOS() {
     }
   }
 
+  // ===== EXPORT (CSV) + FILTERS =====
+  function csvEscape(v) {
+    const s = String(v ?? "");
+    if (s.includes('"') || s.includes(",") || s.includes("\n")) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function toCSV(rows) {
+    return rows.map((r) => r.map(csvEscape).join(",")).join("\n");
+  }
+
+  function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2500);
+  }
+
+  const movementStats = useMemo(() => {
+    let cin = 0,
+      cout = 0;
+    for (const m of movements || []) {
+      if (m?.type === "CASH_IN") cin++;
+      else if (m?.type === "CASH_OUT") cout++;
+    }
+    return {
+      cashInCount: cin,
+      cashOutCount: cout,
+      total: (movements || []).length,
+    };
+  }, [movements]);
+
+  const movementsFiltered = useMemo(() => {
+    if (!movements?.length) return [];
+    if (cashTab === "ALL") return movements;
+    return movements.filter((m) => m.type === cashTab);
+  }, [movements, cashTab]);
+
+  function exportMovementsCSV(list, label) {
+    const dayKey = new Date().toLocaleDateString("sv-SE");
+    const rows = [
+      ["createdAt", "type", "amount", "note"],
+      ...(list || []).map((m) => [
+        new Date(m.createdAt).toLocaleString("id-ID"),
+        m.type,
+        Number(m.amount || 0),
+        m.note || "",
+      ]),
+    ];
+    downloadTextFile(`cash-movements-${label}-${dayKey}.csv`, toCSV(rows));
+  }
+
+  function exportShiftCSV() {
+    const dayKey = new Date().toLocaleDateString("sv-SE");
+    const s = summary || {};
+    const head = [
+      ["Cart", cartName],
+      ["ExportedAt", new Date().toLocaleString("id-ID")],
+      [],
+      ["openingCash", Number(s.openingCash || 0)],
+      ["cashSales", Number(s.cashSales || 0)],
+      ["qrisSales", Number(s.qrisSales || 0)],
+      ["cashIn", Number(s.cashIn || 0)],
+      ["cashOut", Number(s.cashOut || 0)],
+      ["expectedCash", Number(s.expectedCash || 0)],
+      [],
+      ["createdAt", "type", "amount", "note"],
+    ];
+    const body = (movements || []).map((m) => [
+      new Date(m.createdAt).toLocaleString("id-ID"),
+      m.type,
+      Number(m.amount || 0),
+      m.note || "",
+    ]);
+    downloadTextFile(`shift-summary-${dayKey}.csv`, toCSV([...head, ...body]));
+  }
+
+  async function confirmCloseShiftFromModal() {
+    if (closeShiftBusy) return;
+    setCloseShiftBusy(true);
+    const ok = await closeShift();
+    setCloseShiftBusy(false);
+    if (ok) setCloseShiftOpen(false);
+  }
+
   // ===== LOADER =====
   if (!token) {
     return (
@@ -584,7 +714,7 @@ export default function CashierPOS() {
                   ) : (
                     <span className="pill pill--neutral">Shift CLOSED</span>
                   )}
-                  
+
                   <span className="pill pill--soft">
                     Antrian <b>{queue?.length || 0}</b>
                   </span>
@@ -592,7 +722,18 @@ export default function CashierPOS() {
               </div>
 
               <div className="pos-header-actions">
-                
+                <span className="pill pill--soft">
+                  Sync <b>{syncText}</b>
+                </span>
+                {shift ? (
+                  <button
+                    className="btn danger btn--sm"
+                    type="button"
+                    onClick={() => setCloseShiftOpen(true)}
+                  >
+                    Tutup Shift
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -617,7 +758,9 @@ export default function CashierPOS() {
                   <div className="pos-section">
                     <div className="pos-section-head">
                       <h3 className="pos-h3">Buka Shift</h3>
-                      <span className="muted">Mulai transaksi setelah shift OPEN</span>
+                      <span className="muted">
+                        Mulai transaksi setelah shift OPEN
+                      </span>
                     </div>
 
                     <div className="pos-form">
@@ -640,409 +783,563 @@ export default function CashierPOS() {
                   </div>
                 ) : (
                   <>
-                    {/* PROMO */}
-                    <div className="pos-section">
+                    {/* MAIN TABS (ringkas halaman) */}
+                    <div className="pos-section" style={{ paddingBottom: 10 }}>
                       <div className="pos-section-head">
-                        <h3 className="pos-h3">Promo</h3>
-                        <span className="muted">Pilih promo untuk transaksi langsung / checkout antrian</span>
+                        <h3 className="pos-h3" style={{ margin: 0 }}>
+                          Kasir
+                        </h3>
+                        <span className="muted">
+                          Ringkas: Jualan • Cash • Shift
+                        </span>
                       </div>
 
-                      <div className="grid-products">
-                        {(meta?.promos || []).map((p) => {
-                          const active = promoIds.includes(p.id);
-                          return (
-                            <div
-                              key={p.id}
-                              className={`prod ${p.isActive === false ? "prod--disabled" : ""}`}
-                            >
-                              <div className="prod-head">
-                                <b className="prod-title">{p.name}</b>
-                                {active ? <span className="pill pill--ok">Dipakai</span> : <span className="pill pill--neutral">Opsional</span>}
-                              </div>
+                      <Tabs
+                        items={[
+                          { value: "SELL", label: "Jualan" },
+                          { value: "CASH", label: "Cash In/Out" },
+                          { value: "SHIFT", label: "Shift" },
+                        ]}
+                        value={mainTab}
+                        onChange={setMainTab}
+                      />
+                    </div>
 
-                              <small className="muted">
-                                {p.type === "DISCOUNT_PERCENT"
-                                  ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(p.minSubtotal || 0)})`
-                                  : `Bonus x${p.bonusQty || 0} (Min ${rupiah(p.minSubtotal || 0)})`}
-                              </small>
+                    {/* ===== TAB: SELL ===== */}
+                    {mainTab === "SELL" ? (
+                      <>
+                        {/* PROMO */}
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Promo</h3>
+                            <span className="muted">
+                              Pilih promo untuk transaksi langsung / checkout
+                              antrian
+                            </span>
+                          </div>
 
-                              <div className="prod-actions">
-                                <button
-                                  className={active ? "btn" : "btn secondary"}
-                                  type="button"
-                                  onClick={() => togglePromo(p.id)}
+                          <div className="grid-products">
+                            {(meta?.promos || []).map((p) => {
+                              const active = promoIds.includes(p.id);
+                              return (
+                                <div
+                                  key={p.id}
+                                  className={`prod ${
+                                    p.isActive === false ? "prod--disabled" : ""
+                                  }`}
                                 >
-                                  {active ? "Dipakai" : "Pakai"}
-                                </button>
+                                  <div className="prod-head">
+                                    <b className="prod-title">{p.name}</b>
+                                    {active ? (
+                                      <span className="pill pill--ok">
+                                        Dipakai
+                                      </span>
+                                    ) : (
+                                      <span className="pill pill--neutral">
+                                        Opsional
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <small className="muted">
+                                    {p.type === "DISCOUNT_PERCENT"
+                                      ? `Diskon ${
+                                          p.discountPercent || 0
+                                        }% (Min ${rupiah(p.minSubtotal || 0)})`
+                                      : `Bonus x${p.bonusQty || 0} (Min ${rupiah(
+                                          p.minSubtotal || 0
+                                        )})`}
+                                  </small>
+
+                                  <div className="prod-actions">
+                                    <button
+                                      className={active ? "btn" : "btn secondary"}
+                                      type="button"
+                                      onClick={() => togglePromo(p.id)}
+                                    >
+                                      {active ? "Dipakai" : "Pakai"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {(!meta?.promos || meta.promos.length === 0) && (
+                              <div className="muted">Belum ada promo aktif.</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="hr" />
+
+                        {/* MENU */}
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Menu</h3>
+                            <span className="muted">
+                              Tap “Kecil/Besar” untuk tambah item
+                            </span>
+                          </div>
+
+                          {metaSyncErr ? (
+                            <div
+                              className="toast toast--danger"
+                              style={{ marginTop: 10 }}
+                            >
+                              Sync error: {metaSyncErr}
+                            </div>
+                          ) : null}
+
+                          <div className="grid-products">
+                            {meta?.products?.map((p) => (
+                              <div key={p.id} className="prod">
+                                <b className="prod-title">{p.name}</b>
+                                <small className="muted">
+                                  Kecil {rupiah(p.priceSmall)} • Besar{" "}
+                                  {rupiah(p.priceLarge)}
+                                </small>
+
+                                <div className="prod-actions prod-actions--split">
+                                  <button
+                                    className="btn secondary"
+                                    type="button"
+                                    onClick={() => addProduct(p, "SMALL")}
+                                  >
+                                    Kecil
+                                  </button>
+                                  <button
+                                    className="btn secondary"
+                                    type="button"
+                                    onClick={() => addProduct(p, "LARGE")}
+                                  >
+                                    Besar
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="hr" />
+
+                        {/* CART */}
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Keranjang</h3>
+                            <span className="muted">
+                              {cart.length
+                                ? `${cart.length} item`
+                                : "Belum ada item"}
+                            </span>
+                          </div>
+
+                          {cart.length === 0 ? (
+                            <div className="muted">Belum ada item.</div>
+                          ) : (
+                            <div className="table-wrap">
+                              <table className="table">
+                                <thead>
+                                  <tr>
+                                    <th>Item</th>
+                                    <th style={{ width: 120 }}>Qty</th>
+                                    <th style={{ width: 140 }}>Subtotal</th>
+                                    <th style={{ width: 80 }}></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {cart.map((it) => (
+                                    <tr key={it.key}>
+                                      <td>
+                                        <div>
+                                          <b>{it.name}</b>
+                                        </div>
+                                        <div style={{ marginTop: 8 }}>
+                                          <input
+                                            className="input"
+                                            placeholder="Catatan (level pedas/mix saus)"
+                                            value={it.itemNote}
+                                            onChange={(e) =>
+                                              setCart((prev) =>
+                                                prev.map((x) =>
+                                                  x.key === it.key
+                                                    ? {
+                                                        ...x,
+                                                        itemNote: e.target.value,
+                                                      }
+                                                    : x
+                                                )
+                                              )
+                                            }
+                                          />
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <div className="qty-ctrl">
+                                          <button
+                                            className="btn secondary"
+                                            type="button"
+                                            onClick={() => updateQty(it.key, -1)}
+                                          >
+                                            -
+                                          </button>
+                                          <div className="qty-num">{it.qty}</div>
+                                          <button
+                                            className="btn secondary"
+                                            type="button"
+                                            onClick={() => updateQty(it.key, +1)}
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <b>{rupiah(it.price * it.qty)}</b>
+                                      </td>
+                                      <td>
+                                        <button
+                                          className="btn danger"
+                                          type="button"
+                                          onClick={() => removeItem(it.key)}
+                                        >
+                                          X
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="hr" />
+
+                        {/* ENQUEUE */}
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Tambah ke Antrian</h3>
+                            <span className="muted">Belum dibayar</span>
+                          </div>
+
+                          <div className="pos-form">
+                            <div className="pos-field">
+                              <label>Nama pelanggan (unik)</label>
+                              <input
+                                className="input"
+                                value={customerName}
+                                onChange={(e) => setCustomerName(e.target.value)}
+                                placeholder="contoh: Budi / Teh Rina"
+                              />
+                            </div>
+
+                            <div className="pos-actions">
+                              <button
+                                className="btn secondary"
+                                type="button"
+                                onClick={enqueueOrder}
+                                disabled={!customerName || cart.length === 0}
+                              >
+                                Tambah ke Antrian
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="hr" />
+
+                        {/* CHECKOUT DIRECT */}
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Selesaikan Langsung</h3>
+                            <span className="muted">Bayar sekarang</span>
+                          </div>
+
+                          <div className="row">
+                            <div className="col">
+                              <label>Diskon (Rp)</label>
+                              <input
+                                className="input"
+                                type="number"
+                                value={discount}
+                                onChange={(e) => setDiscount(e.target.value)}
+                              />
+                            </div>
+                            <div className="col">
+                              <label>Metode Bayar</label>
+                              <select
+                                className="input"
+                                value={paymentMethod}
+                                onChange={(e) => setPaymentMethod(e.target.value)}
+                              >
+                                <option value="CASH">CASH</option>
+                                <option value="QRIS">QRIS</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div style={{ marginTop: 12 }}>
+                            <label>Catatan transaksi / antrian (opsional)</label>
+                            <textarea
+                              className="input"
+                              rows="2"
+                              value={note}
+                              onChange={(e) => setNote(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="pos-totalbar">
+                            <div>
+                              <div className="muted">Total</div>
+                              <div className="pos-total">{rupiah(netTotal)}</div>
+                            </div>
+
+                            <button
+                              className="btn pos-cta"
+                              type="button"
+                              onClick={submitSale}
+                              disabled={cart.length === 0}
+                            >
+                              Selesaikan
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+
+                    {/* ===== TAB: CASH ===== */}
+                    {mainTab === "CASH" ? (
+                      <>
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Cash In/Out</h3>
+                            <span className="muted">
+                              Catat pengeluaran / tambah kas
+                            </span>
+                          </div>
+
+                          <div style={{ marginTop: 6 }}>
+                            <label>Jenis</label>
+                            <Tabs
+                              items={[
+                                { value: "CASH_OUT", label: "Cash Out" },
+                                { value: "CASH_IN", label: "Cash In" },
+                              ]}
+                              value={cashMoveType}
+                              onChange={setCashMoveType}
+                            />
+                          </div>
+
+                          <div className="row" style={{ marginTop: 12 }}>
+                            <div className="col">
+                              <label>Nominal (Rp)</label>
+                              <input
+                                className="input"
+                                type="number"
+                                value={cashMoveAmount}
+                                onChange={(e) => setCashMoveAmount(e.target.value)}
+                              />
+                            </div>
+                            <div className="col">
+                              <label>Catatan</label>
+                              <input
+                                className="input"
+                                value={cashMoveNote}
+                                onChange={(e) => setCashMoveNote(e.target.value)}
+                                placeholder="contoh: beli gas / tambah kembalian"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="pos-actions" style={{ marginTop: 12 }}>
+                            <button
+                              className="btn secondary"
+                              type="button"
+                              onClick={submitCashMovement}
+                              disabled={!cashMoveAmount || Number(cashMoveAmount) <= 0}
+                            >
+                              Simpan Cash Movement
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="hr" />
+
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Riwayat Cash Movement</h3>
+                            <div className="pos-header-actions">
+                              <button
+                                className="btn secondary btn--sm"
+                                type="button"
+                                onClick={() =>
+                                  exportMovementsCSV(
+                                    movementsFiltered,
+                                    String(cashTab).toLowerCase()
+                                  )
+                                }
+                                disabled={!movementsFiltered.length}
+                              >
+                                Export CSV
+                              </button>
+                            </div>
+                          </div>
+
+                          <Tabs
+                            items={[
+                              { value: "ALL", label: `Semua (${movementStats.total})` },
+                              {
+                                value: "CASH_IN",
+                                label: `Cash In (${movementStats.cashInCount})`,
+                              },
+                              {
+                                value: "CASH_OUT",
+                                label: `Cash Out (${movementStats.cashOutCount})`,
+                              },
+                            ]}
+                            value={cashTab}
+                            onChange={setCashTab}
+                          />
+
+                          <div style={{ marginTop: 12 }}>
+                            {movementsFiltered.length ? (
+                              <div className="table-wrap">
+                                <table className="table">
+                                  <thead>
+                                    <tr>
+                                      <th>Waktu</th>
+                                      <th>Jenis</th>
+                                      <th>Nominal</th>
+                                      <th>Catatan</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {movementsFiltered.slice(0, 20).map((m) => (
+                                      <tr key={m.id}>
+                                        <td>
+                                          {new Date(m.createdAt).toLocaleTimeString(
+                                            "id-ID"
+                                          )}
+                                        </td>
+                                        <td>
+                                          <span
+                                            className={`badge ${
+                                              m.type === "CASH_IN"
+                                                ? "badge--accent1"
+                                                : "badge--danger"
+                                            }`}
+                                          >
+                                            {m.type}
+                                          </span>
+                                        </td>
+                                        <td>
+                                          <b>{rupiah(m.amount)}</b>
+                                        </td>
+                                        <td className="muted">{m.note || "-"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <div className="muted">
+                                Belum ada data untuk filter ini.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+
+                    {/* ===== TAB: SHIFT ===== */}
+                    {mainTab === "SHIFT" ? (
+                      <>
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Ringkasan Shift</h3>
+                            <span className="muted">Performa shift berjalan</span>
+                          </div>
+
+                          {summary ? (
+                            <div className="row">
+                              <div className="col">
+                                <div className="card">
+                                  <div className="muted">Modal Awal</div>
+                                  <div>
+                                    <b>{rupiah(summary.openingCash)}</b>
+                                  </div>
+
+                                  <div className="muted" style={{ marginTop: 10 }}>
+                                    Penjualan CASH
+                                  </div>
+                                  <div>
+                                    <b>{rupiah(summary.cashSales)}</b>
+                                  </div>
+
+                                  <div className="muted" style={{ marginTop: 10 }}>
+                                    Penjualan QRIS
+                                  </div>
+                                  <div>
+                                    <b>{rupiah(summary.qrisSales)}</b>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="col">
+                                <div className="card">
+                                  <div className="muted">Cash IN</div>
+                                  <div>
+                                    <b>{rupiah(summary.cashIn)}</b>
+                                  </div>
+
+                                  <div className="muted" style={{ marginTop: 10 }}>
+                                    Cash OUT
+                                  </div>
+                                  <div>
+                                    <b>{rupiah(summary.cashOut)}</b>
+                                  </div>
+
+                                  <div className="muted" style={{ marginTop: 10 }}>
+                                    Expected Cash
+                                  </div>
+                                  <div style={{ fontSize: 18 }}>
+                                    <b>{rupiah(summary.expectedCash)}</b>
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                          );
-                        })}
-                        {(!meta?.promos || meta.promos.length === 0) && (
-                          <div className="muted">Belum ada promo aktif.</div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="hr" />
-
-                    {/* MENU */}
-                    <div className="pos-section">
-                      <div className="pos-section-head">
-                        <h3 className="pos-h3">Menu</h3>
-                        <span className="muted">Tap “Kecil/Besar” untuk tambah item</span>
-                      </div>
-
-                      {metaSyncErr ? (
-                        <div className="toast toast--danger" style={{ marginTop: 10 }}>
-                          Sync error: {metaSyncErr}
+                          ) : (
+                            <div className="muted">Belum ada ringkasan.</div>
+                          )}
                         </div>
-                      ) : null}
 
-                      <div className="grid-products">
-                        {meta?.products?.map((p) => (
-                          <div key={p.id} className="prod">
-                            <b className="prod-title">{p.name}</b>
-                            <small className="muted">
-                              Kecil {rupiah(p.priceSmall)} • Besar {rupiah(p.priceLarge)}
-                            </small>
+                        <div className="hr" />
 
-                            <div className="prod-actions prod-actions--split">
-                              <button
-                                className="btn secondary"
-                                type="button"
-                                onClick={() => addProduct(p, "SMALL")}
-                              >
-                                Kecil
-                              </button>
-                              <button
-                                className="btn secondary"
-                                type="button"
-                                onClick={() => addProduct(p, "LARGE")}
-                              >
-                                Besar
-                              </button>
-                            </div>
+                        <div className="pos-section">
+                          <div className="pos-section-head">
+                            <h3 className="pos-h3">Tutup Shift</h3>
+                            <span className="muted">
+                              Kas fisik & konfirmasi ada di popup
+                            </span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
 
-                    <div className="hr" />
-
-                    {/* CART */}
-                    <div className="pos-section">
-                      <div className="pos-section-head">
-                        <h3 className="pos-h3">Keranjang</h3>
-                        <span className="muted">{cart.length ? `${cart.length} item` : "Belum ada item"}</span>
-                      </div>
-
-                      {cart.length === 0 ? (
-                        <div className="muted">Belum ada item.</div>
-                      ) : (
-                        <div className="table-wrap">
-                          <table className="table">
-                            <thead>
-                              <tr>
-                                <th>Item</th>
-                                <th style={{ width: 120 }}>Qty</th>
-                                <th style={{ width: 140 }}>Subtotal</th>
-                                <th style={{ width: 80 }}></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {cart.map((it) => (
-                                <tr key={it.key}>
-                                  <td>
-                                    <div><b>{it.name}</b></div>
-                                    <div style={{ marginTop: 8 }}>
-                                      <input
-                                        className="input"
-                                        placeholder="Catatan (level pedas/mix saus)"
-                                        value={it.itemNote}
-                                        onChange={(e) =>
-                                          setCart((prev) =>
-                                            prev.map((x) =>
-                                              x.key === it.key ? { ...x, itemNote: e.target.value } : x
-                                            )
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </td>
-                                  <td>
-                                    <div className="qty-ctrl">
-                                      <button className="btn secondary" type="button" onClick={() => updateQty(it.key, -1)}>
-                                        -
-                                      </button>
-                                      <div className="qty-num">{it.qty}</div>
-                                      <button className="btn secondary" type="button" onClick={() => updateQty(it.key, +1)}>
-                                        +
-                                      </button>
-                                    </div>
-                                  </td>
-                                  <td><b>{rupiah(it.price * it.qty)}</b></td>
-                                  <td>
-                                    <button className="btn danger" type="button" onClick={() => removeItem(it.key)}>
-                                      X
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="hr" />
-
-                    {/* ENQUEUE */}
-                    <div className="pos-section">
-                      <div className="pos-section-head">
-                        <h3 className="pos-h3">Tambah ke Antrian</h3>
-                        <span className="muted">Belum dibayar</span>
-                      </div>
-
-                      <div className="pos-form">
-                        <div className="pos-field">
-                          <label>Nama pelanggan (unik)</label>
-                          <input
-                            className="input"
-                            value={customerName}
-                            onChange={(e) => setCustomerName(e.target.value)}
-                            placeholder="contoh: Budi / Teh Rina"
-                          />
-                        </div>
-
-                        <div className="pos-actions">
-                          <button
-                            className="btn secondary"
-                            type="button"
-                            onClick={enqueueOrder}
-                            disabled={!customerName || cart.length === 0}
-                          >
-                            Tambah ke Antrian
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="hr" />
-
-                    {/* CHECKOUT DIRECT */}
-                    <div className="pos-section">
-                      <div className="pos-section-head">
-                        <h3 className="pos-h3">Selesaikan Langsung</h3>
-                        <span className="muted">Bayar sekarang</span>
-                      </div>
-
-                      <div className="row">
-                        <div className="col">
-                          <label>Diskon (Rp)</label>
-                          <input
-                            className="input"
-                            type="number"
-                            value={discount}
-                            onChange={(e) => setDiscount(e.target.value)}
-                          />
-                        </div>
-                        <div className="col">
-                          <label>Metode Bayar</label>
-                          <select
-                            className="input"
-                            value={paymentMethod}
-                            onChange={(e) => setPaymentMethod(e.target.value)}
-                          >
-                            <option value="CASH">CASH</option>
-                            <option value="QRIS">QRIS</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: 12 }}>
-                        <label>Catatan transaksi / antrian (opsional)</label>
-                        <textarea
-                          className="input"
-                          rows="2"
-                          value={note}
-                          onChange={(e) => setNote(e.target.value)}
-                        />
-                      </div>
-
-                      <div className="pos-totalbar">
-                        <div>
-                          <div className="muted">Total</div>
-                          <div className="pos-total">
-                            {rupiah(netTotal)}
+                          <div className="pos-actions" style={{ marginTop: 12 }}>
+                            <button
+                              className="btn secondary btn--sm"
+                              type="button"
+                              onClick={exportShiftCSV}
+                              disabled={!summary}
+                            >
+                              Export Shift CSV
+                            </button>
+                            <button
+                              className="btn danger"
+                              type="button"
+                              onClick={() => setCloseShiftOpen(true)}
+                            >
+                              Tutup Shift
+                            </button>
                           </div>
                         </div>
-
-                        <button className="btn pos-cta" type="button" onClick={submitSale} disabled={cart.length === 0}>
-                          Selesaikan
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="hr" />
-
-                    {/* CASH MOVE */}
-                    <div className="pos-section">
-                      <div className="pos-section-head">
-                        <h3 className="pos-h3">Cash In/Out</h3>
-                        <span className="muted">Catat pengeluaran / tambah kas</span>
-                      </div>
-
-                      <div className="row">
-                        <div className="col">
-                          <label>Jenis</label>
-                          <select
-                            className="input"
-                            value={cashMoveType}
-                            onChange={(e) => setCashMoveType(e.target.value)}
-                          >
-                            <option value="CASH_IN">CASH IN (Tambah kas)</option>
-                            <option value="CASH_OUT">CASH OUT (Pengeluaran)</option>
-                          </select>
-                        </div>
-                        <div className="col">
-                          <label>Nominal (Rp)</label>
-                          <input
-                            className="input"
-                            type="number"
-                            value={cashMoveAmount}
-                            onChange={(e) => setCashMoveAmount(e.target.value)}
-                          />
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: 12 }}>
-                        <label>Catatan</label>
-                        <input
-                          className="input"
-                          value={cashMoveNote}
-                          onChange={(e) => setCashMoveNote(e.target.value)}
-                          placeholder="contoh: beli gas / tambah kembalian"
-                        />
-                      </div>
-
-                      <div className="pos-actions" style={{ marginTop: 12 }}>
-                        <button
-                          className="btn secondary"
-                          type="button"
-                          onClick={submitCashMovement}
-                          disabled={!cashMoveAmount || Number(cashMoveAmount) <= 0}
-                        >
-                          Simpan Cash Movement
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="hr" />
-
-                    {/* SUMMARY */}
-                    <div className="pos-section">
-                      <div className="pos-section-head">
-                        <h3 className="pos-h3">Ringkasan Shift</h3>
-                        <span className="muted">Performa shift berjalan</span>
-                      </div>
-
-                      {summary ? (
-                        <div className="row">
-                          <div className="col">
-                            <div className="card">
-                              <div className="muted">Modal Awal</div>
-                              <div><b>{rupiah(summary.openingCash)}</b></div>
-
-                              <div className="muted" style={{ marginTop: 10 }}>Penjualan CASH</div>
-                              <div><b>{rupiah(summary.cashSales)}</b></div>
-
-                              <div className="muted" style={{ marginTop: 10 }}>Penjualan QRIS</div>
-                              <div><b>{rupiah(summary.qrisSales)}</b></div>
-                            </div>
-                          </div>
-                          <div className="col">
-                            <div className="card">
-                              <div className="muted">Cash IN</div>
-                              <div><b>{rupiah(summary.cashIn)}</b></div>
-
-                              <div className="muted" style={{ marginTop: 10 }}>Cash OUT</div>
-                              <div><b>{rupiah(summary.cashOut)}</b></div>
-
-                              <div className="muted" style={{ marginTop: 10 }}>Expected Cash</div>
-                              <div style={{ fontSize: 18 }}><b>{rupiah(summary.expectedCash)}</b></div>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="muted">Belum ada ringkasan.</div>
-                      )}
-                    </div>
-
-                    <div className="hr" />
-
-                    {/* MOVEMENTS */}
-                    <div className="pos-section">
-                      <div className="pos-section-head">
-                        <h3 className="pos-h3">Riwayat Cash Movement</h3>
-                        <span className="muted">10 terakhir</span>
-                      </div>
-
-                      {movements.length ? (
-                        <div className="table-wrap">
-                          <table className="table">
-                            <thead>
-                              <tr>
-                                <th>Waktu</th>
-                                <th>Jenis</th>
-                                <th>Nominal</th>
-                                <th>Catatan</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {movements.slice(0, 10).map((m) => (
-                                <tr key={m.id}>
-                                  <td>{new Date(m.createdAt).toLocaleTimeString("id-ID")}</td>
-                                  <td><span className="badge">{m.type}</span></td>
-                                  <td><b>{rupiah(m.amount)}</b></td>
-                                  <td className="muted">{m.note || "-"}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="muted">Belum ada cash in/out.</div>
-                      )}
-                    </div>
-
-                    <div className="hr" />
-
-                    {/* CLOSE SHIFT */}
-                    <div className="pos-section">
-                      <div className="pos-section-head">
-                        <h3 className="pos-h3">Tutup Shift</h3>
-                        <span className="muted">Pastikan kas fisik sesuai</span>
-                      </div>
-
-                      <div className="pos-form">
-                        <div className="pos-field">
-                          <label>Kas fisik saat tutup (Rp)</label>
-                          <input
-                            className="input"
-                            type="number"
-                            value={closingCash}
-                            onChange={(e) => setClosingCash(e.target.value)}
-                          />
-                        </div>
-
-                        <div className="pos-actions">
-                          <button className="btn danger" type="button" onClick={closeShift}>
-                            Tutup Shift
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                      </>
+                    ) : null}
                   </>
                 )}
               </div>
@@ -1063,15 +1360,14 @@ export default function CashierPOS() {
                         <span className="loading-inline-text">Sync…</span>
                       </span>
                     ) : (
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        
-                      </span>
+                      <span className="muted" style={{ fontSize: 12 }}></span>
                     )}
                   </div>
                 </div>
 
                 <div className="muted" style={{ marginTop: 8 }}>
-                  Pesanan yang sudah masuk antrian belum dibayar. Klik untuk buka & selesaikan.
+                  Pesanan yang sudah masuk antrian belum dibayar. Klik untuk buka &
+                  selesaikan.
                 </div>
 
                 {qErr ? (
@@ -1104,7 +1400,9 @@ export default function CashierPOS() {
 
                           <div className="queue-right">
                             <div className="queue-sub">Estimasi</div>
-                            <div className="queue-total">{rupiah(o.grossTotal || 0)}</div>
+                            <div className="queue-total">
+                              {rupiah(o.grossTotal || 0)}
+                            </div>
                           </div>
                         </div>
                       </button>
@@ -1115,7 +1413,141 @@ export default function CashierPOS() {
             </div>
           </div>
 
-          {/* MODAL */}
+          {/* CLOSE SHIFT MODAL */}
+          {closeShiftOpen && shift ? (
+            <div className="modal-overlay" onClick={() => setCloseShiftOpen(false)}>
+              <div className="modal-card pos-card" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-head">
+                  <div>
+                    <h3 style={{ margin: 0 }}>Tutup Shift • {cartName}</h3>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {new Date().toLocaleString("id-ID")}
+                    </div>
+                  </div>
+                  <button
+                    className="btn secondary"
+                    type="button"
+                    onClick={() => setCloseShiftOpen(false)}
+                    disabled={closeShiftBusy}
+                  >
+                    Tutup
+                  </button>
+                </div>
+
+                <div className="hr" />
+
+                {summary ? (
+                  <div className="row">
+                    <div className="col">
+                      <div className="card">
+                        <div className="muted">Modal Awal</div>
+                        <div>
+                          <b>{rupiah(summary.openingCash)}</b>
+                        </div>
+
+                        <div className="muted" style={{ marginTop: 10 }}>
+                          Penjualan CASH
+                        </div>
+                        <div>
+                          <b>{rupiah(summary.cashSales)}</b>
+                        </div>
+
+                        <div className="muted" style={{ marginTop: 10 }}>
+                          Penjualan QRIS
+                        </div>
+                        <div>
+                          <b>{rupiah(summary.qrisSales)}</b>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="col">
+                      <div className="card">
+                        <div className="muted">Cash IN</div>
+                        <div>
+                          <b>{rupiah(summary.cashIn)}</b>
+                        </div>
+
+                        <div className="muted" style={{ marginTop: 10 }}>
+                          Cash OUT
+                        </div>
+                        <div>
+                          <b>{rupiah(summary.cashOut)}</b>
+                        </div>
+
+                        <div className="muted" style={{ marginTop: 10 }}>
+                          Expected Cash
+                        </div>
+                        <div style={{ fontSize: 18 }}>
+                          <b>{rupiah(summary.expectedCash)}</b>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="muted">Ringkasan belum tersedia.</div>
+                )}
+
+                <div className="hr" />
+
+                <div className="pos-form">
+                  <div className="pos-field">
+                    <label>Kas fisik saat tutup (Rp)</label>
+                    <input
+                      className="input"
+                      type="number"
+                      value={closingCash}
+                      onChange={(e) => setClosingCash(e.target.value)}
+                      placeholder={
+                        summary?.expectedCash != null
+                          ? `Expected: ${rupiah(summary.expectedCash)}`
+                          : ""
+                      }
+                    />
+                    {summary?.expectedCash != null && String(closingCash) !== "" ? (
+                      (() => {
+                        const expected = Number(summary.expectedCash || 0);
+                        const closing = Number(closingCash || 0);
+                        if (!Number.isFinite(closing)) return null;
+                        const v = closing - expected;
+                        const label =
+                          v === 0 ? "PAS" : v > 0 ? "LEBIH" : "KURANG";
+                        return (
+                          <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+                            Selisih: <b>{rupiah(Math.abs(v))}</b> ({label})
+                          </div>
+                        );
+                      })()
+                    ) : null}
+                  </div>
+
+                  <div className="pos-actions" style={{ marginTop: 10 }}>
+                    <button
+                      className="btn secondary btn--sm"
+                      type="button"
+                      onClick={exportShiftCSV}
+                      disabled={!summary}
+                    >
+                      Export Shift CSV
+                    </button>
+                    <button
+                      className="btn danger"
+                      type="button"
+                      onClick={confirmCloseShiftFromModal}
+                      disabled={
+                        closeShiftBusy ||
+                        String(closingCash) === "" ||
+                        Number(closingCash) <= 0
+                      }
+                    >
+                      {closeShiftBusy ? "Menutup…" : "Konfirmasi Tutup Shift"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* MODAL CHECKOUT ORDER */}
           {modalOpen && openOrder ? (
             <div
               className="modal-overlay"
@@ -1168,9 +1600,15 @@ export default function CashierPOS() {
                               </div>
                             ) : null}
                           </td>
-                          <td><span className="badge">{it.portion}</span></td>
+                          <td>
+                            <span className="badge badge--neutral">{it.portion}</span>
+                          </td>
                           <td>{it.qty}</td>
-                          <td><b>{rupiah(Number(it.price || 0) * Number(it.qty || 0))}</b></td>
+                          <td>
+                            <b>
+                              {rupiah(Number(it.price || 0) * Number(it.qty || 0))}
+                            </b>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1190,12 +1628,20 @@ export default function CashierPOS() {
                       >
                         <div className="prod-head">
                           <b className="prod-title">{p.name}</b>
-                          {active ? <span className="pill pill--ok">Dipakai</span> : <span className="pill pill--neutral">Opsional</span>}
+                          {active ? (
+                            <span className="pill pill--ok">Dipakai</span>
+                          ) : (
+                            <span className="pill pill--neutral">Opsional</span>
+                          )}
                         </div>
                         <small className="muted">
                           {p.type === "DISCOUNT_PERCENT"
-                            ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(p.minSubtotal || 0)})`
-                            : `Bonus x${p.bonusQty || 0} (Min ${rupiah(p.minSubtotal || 0)})`}
+                            ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(
+                                p.minSubtotal || 0
+                              )})`
+                            : `Bonus x${p.bonusQty || 0} (Min ${rupiah(
+                                p.minSubtotal || 0
+                              )})`}
                         </small>
                         <div className="prod-actions">
                           <button
@@ -1249,7 +1695,9 @@ export default function CashierPOS() {
                     className="input"
                     rows="2"
                     value={checkout.note}
-                    onChange={(e) => setCheckout((p) => ({ ...p, note: e.target.value }))}
+                    onChange={(e) =>
+                      setCheckout((p) => ({ ...p, note: e.target.value }))
+                    }
                   />
                 </div>
 
@@ -1258,20 +1706,38 @@ export default function CashierPOS() {
                 <div className="modal-foot">
                   <div className="modal-totals">
                     <div className="muted">Gross</div>
-                    <div><b>{rupiah(openOrder.grossTotal || 0)}</b></div>
+                    <div>
+                      <b>{rupiah(openOrder.grossTotal || 0)}</b>
+                    </div>
 
-                    <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
-                    <div><b>{rupiah(checkoutPromoDiscount)}</b></div>
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      Diskon Promo
+                    </div>
+                    <div>
+                      <b>{rupiah(checkoutPromoDiscount)}</b>
+                    </div>
 
-                    <div className="muted" style={{ marginTop: 6 }}>Net</div>
-                    <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      Net
+                    </div>
+                    <div className="modal-net">
+                      <b>{rupiah(checkoutNetTotal)}</b>
+                    </div>
                   </div>
 
                   <div className="modal-actions">
-                    <button className="btn danger" type="button" onClick={() => cancelOrder(openOrder.id)}>
+                    <button
+                      className="btn danger"
+                      type="button"
+                      onClick={() => cancelOrder(openOrder.id)}
+                    >
                       Batalkan Order
                     </button>
-                    <button className="btn" type="button" onClick={() => checkoutOrder(openOrder.id)}>
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => checkoutOrder(openOrder.id)}
+                    >
                       Selesaikan & Bayar
                     </button>
                   </div>
