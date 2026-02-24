@@ -213,6 +213,9 @@ export default function Dashboard() {
                 <button className="adm-nav-item" type="button" onClick={() => nav("/admin/reports")}>
                   Laporan
                 </button>
+                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/inventory")}>
+                  Stok
+                </button>
               </div>
 
               <div className="adm-nav-foot">

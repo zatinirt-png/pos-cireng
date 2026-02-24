@@ -13,7 +13,7 @@ import AdminPromos from "./pages/AdminPromos";
 import AdminUsers from "./pages/AdminUsers";
 import AdminCarts from "./pages/AdminCarts";
 import AdminReports from "./pages/AdminReports";
-
+import AdminInventory from "./pages/AdminInventory";
 import PartnerLogin from "./pages/PartnerLogin";
 import PartnerDashboard from "./pages/PartnerDashboard";
 
@@ -97,7 +97,7 @@ export default function App() {
         <Route path="/admin/users" element={<AdminUsers />} />
         <Route path="/admin/carts" element={<AdminCarts />} />
         <Route path="/admin/reports" element={<AdminReports />} />
-
+        <Route path="/admin/inventory" element={<AdminInventory />} />
         <Route path="/partner" element={<PartnerLogin />} />
         <Route path="/partner/dashboard" element={<PartnerDashboard />} />
 

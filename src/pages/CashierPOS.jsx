@@ -19,6 +19,11 @@ function normName(s) {
   return String(s || "").trim();
 }
 
+function isCoreStockName(name) {
+  const n = String(name || "").trim().toLowerCase();
+  return n === "cireng" || n === "kemasan";
+}
+
 export default function CashierPOS() {
   const nav = useNavigate();
 
@@ -31,37 +36,50 @@ export default function CashierPOS() {
   const [metaSyncErr, setMetaSyncErr] = useState("");
   const metaSigRef = useRef("");
 
-  function computeMetaSig(metaObj) {
-    const products = (metaObj?.products || [])
-      .map((p) => `${p.id}:${p.priceSmall}:${p.priceLarge}:${p.isActive ?? ""}`)
-      .join("|");
-    const promos = (metaObj?.promos || [])
-      .map(
-        (p) =>
-          `${p.id}:${p.type}:${p.isActive}:${p.discountPercent}:${p.bonusProductId}:${p.bonusQty}:${p.startAt}:${p.endAt}`
-      )
-      .join("|");
-    return `p=${products}__r=${promos}`;
-  }
+    function computeMetaSig(metaObj) {
+      const products = (metaObj?.products || [])
+        .map((p) => `${p.id}:${p.priceSmall}:${p.priceLarge}:${p.isActive ?? ""}`)
+        .join("|");
 
-  async function loadMeta({ silent = false } = {}) {
-    try {
-      const metaRes = await apiGet("/api/meta");
-      setMeta(metaRes);
-      setMetaSyncAt(new Date());
-      setMetaSyncErr("");
+      const promos = (metaObj?.promos || [])
+        .map(
+          (p) =>
+            `${p.id}:${p.type}:${p.isActive}:${p.discountPercent}:${p.bonusProductId}:${p.bonusQty}:${p.startAt}:${p.endAt}`
+        )
+        .join("|");
 
-      const sig = computeMetaSig(metaRes);
-      if (metaSigRef.current && metaSigRef.current !== sig) {
-        setMsg("Menu / promo diperbarui dari Admin.");
-      }
-      metaSigRef.current = sig;
-    } catch (e) {
-      const em = e?.message || "Gagal sync meta";
-      setMetaSyncErr(em);
-      if (!silent) setErr(em);
+      const ingredients = (metaObj?.ingredients || [])
+        .map((i) => `${i.id}:${i.name}:${i.unit}:${i.isGlobal}:${i.allowNegative}`)
+        .join("|");
+
+      return `p=${products}__r=${promos}__i=${ingredients}`;
     }
-  }
+
+    async function loadMeta({ silent = false } = {}) {
+      try {
+        const metaRes = await apiGet("/api/meta");
+        setMeta(metaRes);
+        setMetaSyncAt(new Date());
+        setMetaSyncErr("");
+
+        const sig = computeMetaSig(metaRes);
+
+        if (metaSigRef.current && metaSigRef.current !== sig) {
+          setMsg("Menu / promo / bahan diperbarui dari Admin.");
+
+          // ✅ kalau shift belum dibuka, refresh stok opening tanpa menghapus input kasir
+          try {
+            if (!shift) await loadOpeningStocks({ preserve: true });
+          } catch (_) {}
+        }
+
+        metaSigRef.current = sig;
+      } catch (e) {
+        const em = e?.message || "Gagal sync meta";
+        setMetaSyncErr(em);
+        if (!silent) setErr(em);
+      }
+    }
 
   // ===== SHIFT + CASH =====
   const [shift, setShift] = useState(null);
@@ -72,6 +90,16 @@ export default function CashierPOS() {
   const [cashMoveType, setCashMoveType] = useState("CASH_OUT");
   const [cashMoveAmount, setCashMoveAmount] = useState(0);
   const [cashMoveNote, setCashMoveNote] = useState("");
+
+  
+  // ===== OPENING STOCK (Inventory) =====
+  const [invStocks, setInvStocks] = useState([]); // CART (per gerobak)
+  const [invCentralStocks, setInvCentralStocks] = useState([]); // CENTRAL (read-only)
+  const [invLoading, setInvLoading] = useState(false);
+  const [invErr, setInvErr] = useState("");
+
+  const [openStockChecked, setOpenStockChecked] = useState({});
+  const [openStockQty, setOpenStockQty] = useState({});
 
   // ===== CART + SALE =====
   const [cart, setCart] = useState([]);
@@ -160,6 +188,32 @@ export default function CashierPOS() {
     }
   }
 
+  const [activeTab, setActiveTab] = useState("antrian"); // sesuaikan default kamu
+const [stockItems, setStockItems] = useState([]);
+const [stockLoading, setStockLoading] = useState(false);
+const [stockErr, setStockErr] = useState("");
+
+async function loadStock() {
+  setStockLoading(true);
+  setStockErr("");
+  try {
+    const data = await apiGet("/cashier/stock", token);
+    setStockItems(data?.items || []);
+  } catch (e) {
+    setStockErr(e?.message || "Gagal memuat stok");
+  } finally {
+    setStockLoading(false);
+  }
+}
+
+useEffect(() => {
+  if (activeTab !== "stok") return;
+  loadStock();
+  const t = setInterval(loadStock, 5000); // realtime versi aman (polling)
+  return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeTab]);
+
   // ===== QUEUE LOAD =====
   async function loadQueue() {
     if (!token) return;
@@ -175,18 +229,11 @@ export default function CashierPOS() {
     }
   }
 
-  useEffect(() => {
-    if (!token) return;
-    loadQueue();
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") loadQueue();
-    }, 2500);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  
 
-  useEffect(() => {
+    useEffect(() => {
     if (!token) return;
+
     load({ boot: true });
 
     const t = setInterval(() => {
@@ -204,6 +251,13 @@ export default function CashierPOS() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (shift) return; // hanya saat shift CLOSED
+    loadOpeningStocks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, shift]);
 
   // ===== CALC =====
   const grossTotal = useMemo(
@@ -280,17 +334,78 @@ export default function CashierPOS() {
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
+    async function loadOpeningStocks({ preserve = false } = {}) {
+      if (!token) return;
+      setInvErr("");
+      setInvLoading(true);
+
+      try {
+        const r = await apiGet("/api/cashier/inventory/stocks?includeCentral=true", token);
+
+        const all = r?.stocks || [];
+        const cartStocks = all.filter((x) => !x.isGlobal);
+        const centralStocks = all.filter((x) => !!x.isGlobal);
+
+        setInvStocks(cartStocks);
+        setInvCentralStocks(centralStocks);
+
+        const prevChecked = preserve ? (openStockChecked || {}) : {};
+        const prevQty = preserve ? (openStockQty || {}) : {};
+
+        const checked = {};
+        const qty = {};
+
+        for (const s of cartStocks) {
+          const core = isCoreStockName(s.name);
+          checked[s.id] = core ? true : !!prevChecked[s.id];
+          qty[s.id] = prevQty[s.id] ?? Number(s.qty ?? 0);
+        }
+
+        setOpenStockChecked(checked);
+        setOpenStockQty(qty);
+      } catch (e) {
+        setInvErr(e?.message || "Gagal load stok untuk pembukaan shift");
+        setInvStocks([]);
+        setInvCentralStocks([]);
+      } finally {
+        setInvLoading(false);
+      }
+    }
 
   // ===== SHIFT OPS =====
   async function openShift() {
     setErr("");
     setMsg("");
+
     try {
+      // Build payload openingStocks
+      const selected = (invStocks || []).filter((s) => openStockChecked[s.id]);
+
+      // Validasi core (kalau inventory aktif & core ada)
+      const hasCireng = (invStocks || []).some((s) => String(s.name || "").toLowerCase() === "cireng");
+      const hasKemasan = (invStocks || []).some((s) => String(s.name || "").toLowerCase() === "kemasan");
+      if (hasCireng && !selected.some((s) => String(s.name || "").toLowerCase() === "cireng")) {
+        throw new Error("Cireng wajib dipilih untuk stok awal.");
+      }
+      if (hasKemasan && !selected.some((s) => String(s.name || "").toLowerCase() === "kemasan")) {
+        throw new Error("Kemasan wajib dipilih untuk stok awal.");
+      }
+        
+
+      const openingStocks = selected.map((s) => ({
+        ingredientId: s.id,
+        qty: Number(openStockQty[s.id] ?? 0),
+      }));
+
       const res = await apiPost(
         "/api/shifts/open",
-        { openingCash: Number(openingCash || 0) },
+        {
+          openingCash: Number(openingCash || 0),
+          openingStocks, // ✅ NEW
+        },
         token
       );
+
       setShift(res.shift);
 
       const sum = await apiGet("/api/shifts/summary", token);
@@ -773,11 +888,123 @@ export default function CashierPOS() {
                           onChange={(e) => setOpeningCash(e.target.value)}
                         />
                       </div>
+                      <div style={{ marginTop: 14 }}>
+                        <div className="pos-section-head" style={{ marginBottom: 8 }}>
+                          <h3 className="pos-h3" style={{ margin: 0 }}>Stok Awal (per gerobak)</h3>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end" }}>
+                            <span className="muted">Centang bahan yang kamu simpan hari ini. Cireng & Kemasan wajib.</span>
+                            <button
+                              className="btn secondary btn--sm"
+                              type="button"
+                              onClick={() => loadOpeningStocks({ preserve: true })}
+                            >
+                              Refresh bahan
+                            </button>
+                          </div>
+                        </div>
 
+                        {invErr ? (
+                          <div className="toast toast--danger" style={{ marginBottom: 10 }}>{invErr}</div>
+                        ) : null}
+
+                        {invLoading ? (
+                          <div className="muted">Memuat daftar bahan...</div>
+                        ) : (invStocks?.length ? (
+                          <div style={{ display: "grid", gap: 10 }}>
+                            {invStocks.map((s) => {
+                              const core = isCoreStockName(s.name);
+                              const checked = !!openStockChecked[s.id];
+
+                              return (
+                                <div
+                                  key={s.id}
+                                  className="pos-card"
+                                  style={{
+                                    padding: 12,
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 140px",
+                                    gap: 10,
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      disabled={core}
+                                      onChange={(e) =>
+                                        setOpenStockChecked((prev) => ({ ...prev, [s.id]: e.target.checked }))
+                                      }
+                                    />
+                                    <div>
+                                      <div style={{ fontWeight: 700 }}>
+                                        {s.name} <span className="muted" style={{ fontWeight: 500 }}>({s.unit})</span>
+                                        {core ? <span className="pill pill--soft" style={{ marginLeft: 8 }}>Wajib</span> : null}
+                                      </div>
+                                      <div className="muted" style={{ fontSize: 12 }}>
+                                        Stok terakhir: <b>{Number(s.qty ?? 0)}</b>
+                                      </div>
+                                    </div>
+                                  </label>
+
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    disabled={!checked}
+                                    value={openStockQty[s.id] ?? 0}
+                                    onChange={(e) =>
+                                      setOpenStockQty((prev) => ({ ...prev, [s.id]: e.target.value }))
+                                    }
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="muted">
+                            Inventory belum aktif / belum ada bahan. (Admin perlu tambah ingredient seperti Cireng & Kemasan.)
+                          </div>
+                        ))}
+                      </div>
                       <div className="pos-actions">
                         <button className="btn" type="button" onClick={openShift}>
                           Buka Shift
                         </button>
+                        {invCentralStocks?.length ? (
+                          <details style={{ marginTop: 12 }}>
+                            <summary className="muted" style={{ cursor: "pointer" }}>
+                              Lihat stok CENTRAL (read-only) • {invCentralStocks.length} bahan
+                            </summary>
+                            <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                              {invCentralStocks.map((s) => (
+                                <div
+                                  key={s.id}
+                                  className="pos-card"
+                                  style={{
+                                    padding: 12,
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 140px",
+                                    gap: 10,
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontWeight: 700 }}>
+                                      {s.name} <span className="muted" style={{ fontWeight: 500 }}>({s.unit})</span>
+                                      <span className="pill pill--soft" style={{ marginLeft: 8 }}>Central</span>
+                                    </div>
+                                    <div className="muted" style={{ fontSize: 12 }}>
+                                      Catatan: bahan CENTRAL dikelola Admin, bukan stok per gerobak.
+                                    </div>
+                                  </div>
+                                  <input className="input" type="number" value={Number(s.qty ?? 0)} disabled />
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -799,6 +1026,7 @@ export default function CashierPOS() {
                           { value: "SELL", label: "Jualan" },
                           { value: "CASH", label: "Cash In/Out" },
                           { value: "SHIFT", label: "Shift" },
+                          { value: "stok", label: "Stok" },
                         ]}
                         value={mainTab}
                         onChange={setMainTab}
@@ -1340,10 +1568,60 @@ export default function CashierPOS() {
                         </div>
                       </>
                     ) : null}
+
+                    {mainTab === "stok" && (
+                      <div className="card" style={{ padding: 16 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: 16 }}>Stok Gerobak</div>
+                            <div style={{ opacity: 0.7, fontSize: 12 }}>Auto refresh tiap 5 detik</div>
+                          </div>
+                          <button className="btn btn-primary" onClick={loadStock} disabled={stockLoading}>
+                            {stockLoading ? "Memuat..." : "Refresh"}
+                          </button>
+                        </div>
+
+                        {stockErr ? (
+                          <div style={{ marginTop: 12 }} className="alert alert-danger">
+                            {stockErr}
+                          </div>
+                        ) : null}
+
+                        <div style={{ marginTop: 12, overflowX: "auto" }}>
+                          <table className="table" style={{ width: "100%", minWidth: 520 }}>
+                            <thead>
+                              <tr>
+                                <th style={{ textAlign: "left" }}>Item</th>
+                                <th style={{ textAlign: "right" }}>Qty</th>
+                                <th style={{ textAlign: "left" }}>Unit</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stockItems.length ? (
+                                stockItems.map((s) => (
+                                  <tr key={s.itemId}>
+                                    <td>{s.name}</td>
+                                    <td style={{ textAlign: "right", fontWeight: 700 }}>{Number(s.qty || 0)}</td>
+                                    <td>{s.unit}</td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={3} style={{ opacity: 0.7 }}>Belum ada data stok.</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    
                   </>
                 )}
               </div>
             </div>
+            
 
             {/* RIGHT */}
             <div className="pos-col">

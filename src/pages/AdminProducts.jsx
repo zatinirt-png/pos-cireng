@@ -1,14 +1,20 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
-import { apiGet, apiPost, apiPatch, apiDelete } from "../api";
+import { apiGet, apiPost, apiPatch, apiDelete, apiPut } from "../api";
 import { useNavigate } from "react-router-dom";
 
-const CACHE_KEY = "admin_products_cache_v1";
+const CACHE_KEY = "admin_products_cache_v2";
 const CACHE_TTL = 30_000; // 30 detik
 
 function idr(n) {
   const v = Number(n || 0);
   if (!Number.isFinite(v)) return "0";
   return v.toLocaleString("id-ID");
+}
+
+function toInt(v, def = 0) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return def;
+  return Math.floor(n);
 }
 
 export default function AdminProducts() {
@@ -31,6 +37,18 @@ export default function AdminProducts() {
     priceLarge: 20000,
     isActive: true,
   });
+
+  // ===== Ingredients (for recipe builder) =====
+  const [ingredients, setIngredients] = useState([]);
+  const [ingLoading, setIngLoading] = useState(false);
+  const [ingErr, setIngErr] = useState("");
+
+  // ===== Recipe Builder =====
+  const [recipeEnabled, setRecipeEnabled] = useState(false);
+  const [recipeBusy, setRecipeBusy] = useState(false);
+  const [recipeErr, setRecipeErr] = useState("");
+  const [recipeMsg, setRecipeMsg] = useState("");
+  const [recipeRows, setRecipeRows] = useState([]); // {ingredientId, portion, qty}
 
   useEffect(() => {
     if (!token) nav("/admin");
@@ -75,13 +93,69 @@ export default function AdminProducts() {
     }
   }
 
+  async function loadIngredients({ silent = false } = {}) {
+    if (!token) return;
+    if (!silent) {
+      setIngErr("");
+      setIngLoading(true);
+    }
+    try {
+      const r = await apiGet("/api/admin/ingredients?active=true", token);
+      setIngredients(r.items || []);
+    } catch (e) {
+      if (!silent) setIngErr(e?.message || "Gagal load bahan (ingredients)");
+      setIngredients([]);
+    } finally {
+      if (!silent) setIngLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
     if (didLoadRef.current) return; // cegah double request (StrictMode)
     didLoadRef.current = true;
     load();
+    loadIngredients({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // Load recipe when editing a product
+  useEffect(() => {
+    if (!token) return;
+
+    // reset recipe state on create mode
+    if (!form.id) {
+      setRecipeEnabled(false);
+      setRecipeRows([]);
+      setRecipeErr("");
+      setRecipeMsg("");
+      return;
+    }
+
+    (async () => {
+      setRecipeBusy(true);
+      setRecipeErr("");
+      setRecipeMsg("");
+      try {
+        const r = await apiGet(`/api/admin/products/${form.id}/recipe`, token);
+        const rows = (r.items || []).map((x) => ({
+          ingredientId: x.ingredientId,
+          portion: (x.portion || "ALL").toUpperCase(),
+          qty: toInt(x.qty, 0),
+        }));
+        setRecipeRows(rows);
+        setRecipeEnabled(true);
+      } catch (e) {
+        // Kalau inventory belum siap, endpoint ini bisa gagal.
+        setRecipeEnabled(false);
+        setRecipeRows([]);
+        setRecipeErr(e?.message || "Gagal load resep");
+      } finally {
+        setRecipeBusy(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.id, token]);
 
   function resetForm() {
     setForm({
@@ -92,6 +166,10 @@ export default function AdminProducts() {
       priceLarge: 20000,
       isActive: true,
     });
+    setRecipeEnabled(false);
+    setRecipeRows([]);
+    setRecipeErr("");
+    setRecipeMsg("");
   }
 
   const editingProduct = useMemo(() => {
@@ -104,17 +182,55 @@ export default function AdminProducts() {
     return !!(editingProduct.isActive ?? editingProduct.active);
   }, [editingProduct, form.isActive]);
 
+  function addRecipeRow() {
+    setRecipeRows((prev) => [...prev, { ingredientId: "", portion: "ALL", qty: 1 }]);
+  }
+  function updateRecipeRow(idx, patch) {
+    setRecipeRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  }
+  function removeRecipeRow(idx) {
+    setRecipeRows((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function buildRecipePayload() {
+    return (recipeRows || [])
+      .map((r) => ({
+        ingredientId: String(r.ingredientId || "").trim(),
+        portion: String(r.portion || "ALL").toUpperCase(),
+        qty: toInt(r.qty, 0),
+      }))
+      .filter((r) => r.ingredientId && r.qty > 0);
+  }
+
+  async function saveRecipe(productId) {
+    if (!productId) return;
+    setRecipeBusy(true);
+    setRecipeErr("");
+    setRecipeMsg("");
+    try {
+      const payload = buildRecipePayload();
+      await apiPut(`/api/admin/products/${productId}/recipe`, { items: payload }, token);
+      setRecipeMsg(payload.length ? "Resep tersimpan." : "Resep dikosongkan.");
+    } catch (e) {
+      setRecipeErr(e?.message || "Gagal simpan resep");
+    } finally {
+      setRecipeBusy(false);
+    }
+  }
+
   async function submit(e) {
     e.preventDefault();
     setErr("");
     setMsg("");
+    setRecipeErr("");
+    setRecipeMsg("");
 
     try {
       const payload = {
         sku: String(form.sku || "").trim(),
         name: String(form.name || "").trim(),
-        priceSmall: Number(form.priceSmall || 0),
-        priceLarge: Number(form.priceLarge || 0),
+        priceSmall: toInt(form.priceSmall, 0),
+        priceLarge: toInt(form.priceLarge, 0),
         isActive: !!form.isActive,
       };
 
@@ -130,6 +246,11 @@ export default function AdminProducts() {
           return next;
         });
 
+        // Auto-save recipe after create if enabled + has rows
+        if (recipeEnabled && created?.id) {
+          await saveRecipe(created.id);
+        }
+
         setMsg("Produk ditambahkan.");
       } else {
         const res = await apiPatch(`/api/admin/products/${form.id}`, payload, token);
@@ -144,6 +265,10 @@ export default function AdminProducts() {
           return next;
         });
 
+        if (recipeEnabled) {
+          await saveRecipe(form.id);
+        }
+
         setMsg("Produk diperbarui.");
       }
 
@@ -157,6 +282,9 @@ export default function AdminProducts() {
   function editRow(p) {
     setMsg("");
     setErr("");
+    setRecipeErr("");
+    setRecipeMsg("");
+
     const active = !!(p.isActive ?? p.active);
     setForm({
       id: p.id,
@@ -280,6 +408,9 @@ export default function AdminProducts() {
                 <button className="adm-nav-item" type="button" onClick={() => nav("/admin/reports")}>
                   Laporan
                 </button>
+                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/inventory")}>
+                  Stok
+                </button>
               </div>
 
               <div className="adm-nav-foot">
@@ -297,7 +428,7 @@ export default function AdminProducts() {
                 <div>
                   <h2 className="adm-h2">Kelola Menu</h2>
                   <div className="adm-subline">
-                    <span className="muted">Klik produk untuk edit. Aksi ada di panel Edit.</span>
+                    <span className="muted">Tambah/edit menu + atur resep untuk auto-deduct stok.</span>
                   </div>
                 </div>
 
@@ -430,6 +561,160 @@ export default function AdminProducts() {
                         </div>
                       </div>
                     ) : null}
+
+                    {/* RECIPE BUILDER */}
+                    <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+                      <div className="adm-panel-head" style={{ marginBottom: 8 }}>
+                        <h3 className="adm-h3" style={{ margin: 0 }}>Resep (opsional)</h3>
+
+                        <label className="adm-inline">
+                          <input
+                            type="checkbox"
+                            checked={recipeEnabled}
+                            onChange={(e) => {
+                              const v = e.target.checked;
+                              setRecipeEnabled(v);
+                              setRecipeErr("");
+                              setRecipeMsg("");
+                              if (v && !ingredients.length) loadIngredients({ silent: false });
+                            }}
+                          />
+                          <span>Aktifkan resep</span>
+                        </label>
+                      </div>
+
+                      <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+                        Resep menentukan pengurangan stok otomatis saat penjualan. Qty mengikuti unit bahan (PCS/GRAM/ML).
+                      </div>
+
+                      {ingLoading ? <div className="muted">Loading bahan...</div> : null}
+
+                      {ingErr ? (
+                        <div className="adm-alert" style={{ marginBottom: 10 }}>
+                          {ingErr}
+                          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                            Jika inventory belum siap, buka menu <b>Stok</b> lalu klik <b>Setup Inventory</b>.
+                          </div>
+                          <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                            <button className="btn secondary btn--sm" type="button" onClick={() => loadIngredients({ silent: false })}>
+                              Reload bahan
+                            </button>
+                            <button className="btn secondary btn--sm" type="button" onClick={() => nav("/admin/inventory")}>
+                              Buka Stok
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {recipeErr ? <div className="adm-alert" style={{ marginBottom: 10 }}>{recipeErr}</div> : null}
+                      {recipeMsg ? <div className="adm-alert adm-alert--ok" style={{ marginBottom: 10 }}>{recipeMsg}</div> : null}
+
+                      {recipeEnabled ? (
+                        <>
+                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                            <button className="btn secondary btn--sm" type="button" onClick={addRecipeRow}>
+                              + Tambah bahan
+                            </button>
+
+                            {form.id ? (
+                              <button
+                                className="btn secondary btn--sm"
+                                type="button"
+                                onClick={() => saveRecipe(form.id)}
+                                disabled={recipeBusy}
+                              >
+                                {recipeBusy ? "Menyimpan..." : "Simpan Resep"}
+                              </button>
+                            ) : (
+                              <span className="muted" style={{ fontSize: 12 }}>
+                                *Resep akan tersimpan setelah produk dibuat.
+                              </span>
+                            )}
+
+                            <button
+                              className="btn secondary btn--sm"
+                              type="button"
+                              onClick={() => loadIngredients({ silent: false })}
+                              disabled={ingLoading}
+                            >
+                              Refresh bahan
+                            </button>
+                          </div>
+
+                          <div style={{ display: "grid", gap: 10 }}>
+                            {(recipeRows || []).map((r, idx) => (
+                              <div
+                                key={idx}
+                                className="pos-card"
+                                style={{
+                                  padding: 12,
+                                  display: "grid",
+                                  gridTemplateColumns: "1fr 140px 120px 70px",
+                                  gap: 10,
+                                  alignItems: "center",
+                                }}
+                              >
+                                <div>
+                                  <label className="muted" style={{ fontSize: 12 }}>Bahan</label>
+                                  <select
+                                    className="input"
+                                    value={r.ingredientId}
+                                    onChange={(e) => updateRecipeRow(idx, { ingredientId: e.target.value })}
+                                  >
+                                    <option value="">-- pilih bahan --</option>
+                                    {(ingredients || []).map((ing) => (
+                                      <option key={ing.id} value={ing.id}>
+                                        {ing.name} ({ing.unit}){ing.isGlobal ? " • CENTRAL" : ""}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="muted" style={{ fontSize: 12 }}>Portion</label>
+                                  <select
+                                    className="input"
+                                    value={r.portion}
+                                    onChange={(e) => updateRecipeRow(idx, { portion: e.target.value })}
+                                  >
+                                    <option value="ALL">ALL</option>
+                                    <option value="SMALL">SMALL</option>
+                                    <option value="LARGE">LARGE</option>
+                                  </select>
+                                </div>
+
+                                <div>
+                                  <label className="muted" style={{ fontSize: 12 }}>Qty</label>
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    value={r.qty}
+                                    onChange={(e) => updateRecipeRow(idx, { qty: e.target.value })}
+                                    min={0}
+                                  />
+                                </div>
+
+                                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                                  <button className="btn danger btn--sm" type="button" onClick={() => removeRecipeRow(idx)}>
+                                    Hapus
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+
+                            {!recipeRows.length ? (
+                              <div className="muted" style={{ fontSize: 12 }}>
+                                Belum ada bahan resep. Klik <b>Tambah bahan</b>.
+                              </div>
+                            ) : null}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="muted" style={{ fontSize: 12 }}>
+                          Resep nonaktif.
+                        </div>
+                      )}
+                    </div>
                   </form>
                 </section>
 
@@ -448,7 +733,7 @@ export default function AdminProducts() {
                   </div>
 
                   <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                    Klik item untuk edit (aksi ada di panel kiri).
+                    Klik item untuk edit (resep akan muncul saat edit).
                   </div>
 
                   <div className="adm-list" role="list">
@@ -471,10 +756,7 @@ export default function AdminProducts() {
                           aria-label={`Edit produk ${p.name}`}
                         >
                           <div className="adm-list-top">
-                            <div className="adm-list-sku" title={p.sku}>
-                              {p.sku}
-                            </div>
-
+                            <div className="adm-list-sku" title={p.sku}>{p.sku}</div>
                             <span className={active ? "adm-badge adm-badge--cash" : "adm-badge"}>
                               {active ? "ACTIVE" : "INACTIVE"}
                             </span>
@@ -491,14 +773,9 @@ export default function AdminProducts() {
                       );
                     })}
 
-                    {!visibleItems.length ? (
-                      <div className="muted" style={{ padding: 10 }}>
-                        Belum ada produk.
-                      </div>
-                    ) : null}
+                    {!visibleItems.length ? <div className="muted" style={{ padding: 10 }}>Belum ada produk.</div> : null}
                   </div>
                 </section>
-
               </div>
             </div>
           </main>

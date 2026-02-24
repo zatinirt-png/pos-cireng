@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { apiGet } from "../api";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+
 
 const API_BASE =
   (import.meta?.env?.VITE_API_BASE || "").replace(/\/$/, "") || "";
@@ -47,9 +48,10 @@ function normalizeReport(raw) {
 
 export default function PartnerDashboard() {
   const nav = useNavigate();
+  const loc = useLocation();
   const token = localStorage.getItem("partner_token");
 
-  const [tab, setTab] = useState("overview"); // overview | reports
+  const [tab, setTab] = useState("overview"); // overview | reports | stocks
 
   // ===== Overview data =====
   const [loading, setLoading] = useState(false);
@@ -72,6 +74,22 @@ export default function PartnerDashboard() {
   const [reportRaw, setReportRaw] = useState(null);
 
   const [exportLoading, setExportLoading] = useState("");
+
+  // ===== STOCKS (Inventory) =====
+  const [stockCartId, setStockCartId] = useState("");
+  const [includeCentral, setIncludeCentral] = useState(true);
+  const [stockQ, setStockQ] = useState("");
+
+  const [stockLoading, setStockLoading] = useState(false);
+  const [stockErr, setStockErr] = useState("");
+  const [stockItems, setStockItems] = useState([]);
+
+  // Ledger modal
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerErr, setLedgerErr] = useState("");
+  const [ledgerItems, setLedgerItems] = useState([]);
+  const [ledgerCart, setLedgerCart] = useState(null);
 
   useEffect(() => {
     if (!token) nav("/partner");
@@ -184,15 +202,76 @@ export default function PartnerDashboard() {
     nav("/partner");
   }
 
+  function fmtDT(dt) {
+    if (!dt) return "-";
+    try {
+      return new Date(dt).toLocaleString("id-ID");
+    } catch {
+      return String(dt);
+    }
+  }
+
+  async function loadStocks(cartId) {
+    if (!token || !cartId) return;
+    setStockErr("");
+    setStockLoading(true);
+
+    try {
+      const qs = new URLSearchParams();
+      qs.set("includeCentral", includeCentral ? "1" : "0");
+
+      const r = await apiGet(
+        `/api/partner/inventory/stocks/cart/${cartId}?${qs.toString()}`,
+        token
+      );
+      setStockItems(r.stocks || []);
+    } catch (e) {
+      setStockErr(e?.message || "Gagal load stok");
+      setStockItems([]);
+    } finally {
+      setStockLoading(false);
+    }
+  }
+
+  async function openLedgerModal(cart) {
+    if (!token || !cart?.id) return;
+
+    setLedgerErr("");
+    setLedgerItems([]);
+    setLedgerCart(cart);
+    setLedgerOpen(true);
+    setLedgerLoading(true);
+
+    try {
+      const qs = new URLSearchParams();
+      qs.set("includeCentral", includeCentral ? "1" : "0");
+      qs.set("take", "100");
+
+      const r = await apiGet(
+        `/api/partner/inventory/ledger/cart/${cart.id}?${qs.toString()}`,
+        token
+      );
+      setLedgerItems(r.ledger || []);
+    } catch (e) {
+      setLedgerErr(e?.message || "Gagal load ledger");
+    } finally {
+      setLedgerLoading(false);
+    }
+  }
+
   // close modal by ESC
+  // close modal by ESC (report modal / ledger modal)
   useEffect(() => {
-    if (!modalOpen) return;
+    if (!modalOpen && !ledgerOpen) return;
     const onKeyDown = (e) => {
-      if (e.key === "Escape") setModalOpen(false);
+      if (e.key === "Escape") {
+        setModalOpen(false);
+        setLedgerOpen(false);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [modalOpen]);
+  }, [modalOpen, ledgerOpen]);
 
   // init
   useEffect(() => {
@@ -200,14 +279,42 @@ export default function PartnerDashboard() {
     loadOverview();
   }, []); // eslint-disable-line
 
-  // load carts when opening reports tab
+  useEffect(() => {
+  const qs = new URLSearchParams(loc.search || "");
+  const t = qs.get("tab");
+  if (t === "stocks") setTab("stocks");
+  if (t === "reports") setTab("reports");
+  if (t === "overview") setTab("overview");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [loc.search]);
+
+  // load carts when opening reports/stocks tab
   useEffect(() => {
     if (!token) return;
-    if (tab === "reports" && carts.length === 0 && !cartsLoading) {
+    if ((tab === "reports" || tab === "stocks") && carts.length === 0 && !cartsLoading) {
       loadPartnerCarts();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  // default cart untuk tab stocks
+  useEffect(() => {
+    if (!token) return;
+    if (tab !== "stocks") return;
+    if (stockCartId) return;
+    if (!carts.length) return;
+    setStockCartId(carts[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, carts, token]);
+
+  // auto load stok saat cart / includeCentral berubah
+  useEffect(() => {
+    if (!token) return;
+    if (tab !== "stocks") return;
+    if (!stockCartId) return;
+    loadStocks(stockCartId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, stockCartId, includeCentral]);
 
   // auto refresh report in modal when period/date changes
   useEffect(() => {
@@ -255,6 +362,15 @@ export default function PartnerDashboard() {
               onClick={() => setTab("reports")}
             >
               Laporan
+            </button>
+            <button
+              className={`prt-tab ${tab === "stocks" ? "active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={tab === "stocks"}
+              onClick={() => setTab("stocks")}
+            >
+              Stok
             </button>
           </div>
 
@@ -479,6 +595,8 @@ export default function PartnerDashboard() {
                   ))}
                 </div>
               )}
+
+              
 
               {/* Modal */}
               {modalOpen && (
@@ -713,7 +831,239 @@ export default function PartnerDashboard() {
                 </div>
               )}
             </>
+            
           )}
+          {/* ===== TAB: STOCKS ===== */}
+              {tab === "stocks" && (
+                <>
+                {cartsLoading ? (
+                  <div className="muted">Loading gerobak...</div>
+                ) : carts.length === 0 ? (
+                  <div className="muted">Belum ada gerobak yang bisa diakses.</div>
+                ) : null}
+                  {stockErr && (
+                    <div className="toast" style={{ background: "#ffecec", borderColor: "#ffbdbd" }}>
+                      {stockErr}
+                    </div>
+                  )}
+
+                  <div className="prt-panel">
+                    <div className="prt-panel-head">
+                      <div style={{ fontWeight: 900 }}>Stok Gerobak</div>
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        Global (CENTRAL) {includeCentral ? "ditampilkan" : "disembunyikan"}
+                      </span>
+                    </div>
+
+                    <div className="prt-filters">
+                      <div>
+                        <label>Gerobak</label>
+                        <select
+                          className="input"
+                          value={stockCartId}
+                          onChange={(e) => setStockCartId(e.target.value)}
+                        >
+                          {(carts || []).map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label>Pencarian bahan</label>
+                        <input
+                          className="input"
+                          value={stockQ}
+                          onChange={(e) => setStockQ(e.target.value)}
+                          placeholder="contoh: cireng / kemasan / saus"
+                        />
+                        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                          Tips: cari cepat untuk bahan tertentu.
+                        </div>
+                      </div>
+
+                      <div className="prt-filter-actions" style={{ gap: 10 }}>
+                        <label className="adm-inline" style={{ marginBottom: 4 }}>
+                          <input
+                            type="checkbox"
+                            checked={includeCentral}
+                            onChange={(e) => setIncludeCentral(e.target.checked)}
+                          />
+                          <span>Tampilkan CENTRAL untuk bahan global</span>
+                        </label>
+
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={() => loadStocks(stockCartId)}
+                          disabled={!stockCartId || stockLoading}
+                        >
+                          {stockLoading ? "Loading..." : "Refresh Stok"}
+                        </button>
+
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={() => {
+                            const c = carts.find((x) => x.id === stockCartId);
+                            if (c) openLedgerModal(c);
+                          }}
+                          disabled={!stockCartId}
+                        >
+                          Ledger
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="hr" />
+
+                  <div className="prt-panel">
+                    <div className="prt-panel-head">
+                      <div style={{ fontWeight: 900 }}>Daftar Stok</div>
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        {stockItems?.length ? `${stockItems.length} item` : "0"}
+                      </span>
+                    </div>
+
+                    {stockLoading ? (
+                      <div className="muted">Loading stok...</div>
+                    ) : (
+                      <div className="table-wrap">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Bahan</th>
+                              <th style={{ width: 90 }}>Unit</th>
+                              <th style={{ width: 120 }}>Qty</th>
+                              <th style={{ width: 120 }}>Sumber</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(stockItems || [])
+                              .filter((x) =>
+                                stockQ.trim()
+                                  ? String(x.name || "").toLowerCase().includes(stockQ.trim().toLowerCase())
+                                  : true
+                              )
+                              .map((x) => (
+                                <tr key={x.id}>
+                                  <td>
+                                    <b>{x.name}</b> {x.isGlobal ? <span className="muted">(Global)</span> : null}
+                                  </td>
+                                  <td>{x.unit}</td>
+                                  <td>
+                                    <b>{Number(x.qty ?? 0)}</b>
+                                  </td>
+                                  <td>
+                                    <span className={`adm-badge ${x.source === "CENTRAL" ? "adm-badge--qris" : "adm-badge--cash"}`}>
+                                      {x.source}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+
+                            {(!stockItems || stockItems.length === 0) && (
+                              <tr>
+                                <td colSpan={4} className="muted">
+                                  Belum ada data stok / inventory belum aktif.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* LEDGER MODAL */}
+                  {ledgerOpen && (
+                    <div
+                      role="dialog"
+                      aria-modal="true"
+                      className="modal-overlay"
+                      onClick={() => setLedgerOpen(false)}
+                    >
+                      <div className="modal-card prt-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-head">
+                          <div>
+                            <div className="prt-modal-title">
+                              Ledger — {ledgerCart?.name || "(Gerobak)"}
+                            </div>
+                            <div className="prt-modal-sub muted">
+                              <span className="adm-chip">{includeCentral ? "Include CENTRAL" : "CART only"}</span>
+                            </div>
+                          </div>
+                          <div className="modal-actions">
+                            <button
+                              className="btn secondary"
+                              type="button"
+                              onClick={() => (ledgerCart ? openLedgerModal(ledgerCart) : null)}
+                            >
+                              Refresh
+                            </button>
+                            <button className="btn secondary" type="button" onClick={() => setLedgerOpen(false)}>
+                              Tutup
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="hr" />
+
+                        {ledgerErr ? (
+                          <div className="toast" style={{ background: "#ffecec", borderColor: "#ffbdbd" }}>
+                            {ledgerErr}
+                          </div>
+                        ) : null}
+
+                        {ledgerLoading ? (
+                          <div className="muted">Loading ledger...</div>
+                        ) : (
+                          <div className="table-wrap">
+                            <table className="table">
+                              <thead>
+                                <tr>
+                                  <th>Waktu</th>
+                                  <th>Bahan</th>
+                                  <th style={{ width: 110 }}>Delta</th>
+                                  <th style={{ width: 140 }}>Balance</th>
+                                  <th>Reason / Note</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(ledgerItems || []).map((r) => (
+                                  <tr key={r.id}>
+                                    <td>{fmtDT(r.createdAt)}</td>
+                                    <td>
+                                      <b>{r.ingredient?.name || "-"}</b>{" "}
+                                      <span className="muted">({r.ingredient?.unit || "-"})</span>
+                                    </td>
+                                    <td>
+                                      <b>{Number(r.delta ?? 0)}</b>
+                                    </td>
+                                    <td>{Number(r.balanceAfter ?? 0)}</td>
+                                    <td>
+                                      <div><b>{r.reason || "-"}</b></div>
+                                      <div className="muted" style={{ fontSize: 12 }}>{r.note || "-"}</div>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {(!ledgerItems || ledgerItems.length === 0) && (
+                                  <tr>
+                                    <td colSpan={5} className="muted">Belum ada ledger.</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
         </div>
       </div>
     </div>

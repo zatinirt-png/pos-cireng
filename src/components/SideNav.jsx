@@ -109,6 +109,7 @@ export default function SideNav({ open: openProp, setOpen: setOpenProp }) {
       { label: "Produk", sub: "Data produk & harga", to: "/admin/products", tone: "red" },
       { label: "Promo", sub: "Diskon & campaign", to: "/admin/promos", tone: "red" },
       { label: "Users", sub: "Akun & akses", to: "/admin/users", tone: "red" },
+      { label: "Stok", sub: "Stok gerobak & bahan", to: "/admin/inventory", tone: "red" },
       { label: "Reports", sub: "Laporan penjualan", to: "/admin/reports", tone: "red" },
     ];
   }
@@ -124,6 +125,7 @@ export default function SideNav({ open: openProp, setOpen: setOpenProp }) {
     return [
       { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
       { label: "Dashboard Mitra", sub: "Pantau cabang", to: "/partner/dashboard", tone: "amber" },
+      { label: "Stok", sub: "Stok gerobakmu", to: "/partner/dashboard?tab=stocks", tone: "red" },
     ];
   }
 
