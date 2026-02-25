@@ -3,6 +3,7 @@ import { apiGet, apiPost } from "../api";
 import { useNavigate } from "react-router-dom";
 import LoadingScreen from "../components/ui/LoadingScreen";
 import Tabs from "../components/ui/Tabs";
+import CashierStockPanel from "../components/pos/CashierStockPanel";
 
 function rupiah(amount) {
   const n = Number(amount || 0);
@@ -36,50 +37,50 @@ export default function CashierPOS() {
   const [metaSyncErr, setMetaSyncErr] = useState("");
   const metaSigRef = useRef("");
 
-    function computeMetaSig(metaObj) {
-      const products = (metaObj?.products || [])
-        .map((p) => `${p.id}:${p.priceSmall}:${p.priceLarge}:${p.isActive ?? ""}`)
-        .join("|");
+  function computeMetaSig(metaObj) {
+    const products = (metaObj?.products || [])
+      .map((p) => `${p.id}:${p.priceSmall}:${p.priceLarge}:${p.isActive ?? ""}`)
+      .join("|");
 
-      const promos = (metaObj?.promos || [])
-        .map(
-          (p) =>
-            `${p.id}:${p.type}:${p.isActive}:${p.discountPercent}:${p.bonusProductId}:${p.bonusQty}:${p.startAt}:${p.endAt}`
-        )
-        .join("|");
+    const promos = (metaObj?.promos || [])
+      .map(
+        (p) =>
+          `${p.id}:${p.type}:${p.isActive}:${p.discountPercent}:${p.bonusProductId}:${p.bonusQty}:${p.startAt}:${p.endAt}`
+      )
+      .join("|");
 
-      const ingredients = (metaObj?.ingredients || [])
-        .map((i) => `${i.id}:${i.name}:${i.unit}:${i.isGlobal}:${i.allowNegative}`)
-        .join("|");
+    const ingredients = (metaObj?.ingredients || [])
+      .map((i) => `${i.id}:${i.name}:${i.unit}:${i.isGlobal}:${i.allowNegative}`)
+      .join("|");
 
-      return `p=${products}__r=${promos}__i=${ingredients}`;
-    }
+    return `p=${products}__r=${promos}__i=${ingredients}`;
+  }
 
-    async function loadMeta({ silent = false } = {}) {
-      try {
-        const metaRes = await apiGet("/api/meta");
-        setMeta(metaRes);
-        setMetaSyncAt(new Date());
-        setMetaSyncErr("");
+  async function loadMeta({ silent = false } = {}) {
+    try {
+      const metaRes = await apiGet("/api/meta");
+      setMeta(metaRes);
+      setMetaSyncAt(new Date());
+      setMetaSyncErr("");
 
-        const sig = computeMetaSig(metaRes);
+      const sig = computeMetaSig(metaRes);
 
-        if (metaSigRef.current && metaSigRef.current !== sig) {
-          setMsg("Menu / promo / bahan diperbarui dari Admin.");
+      if (metaSigRef.current && metaSigRef.current !== sig) {
+        setMsg("Menu / promo / bahan diperbarui dari Admin.");
 
-          // ✅ kalau shift belum dibuka, refresh stok opening tanpa menghapus input kasir
-          try {
-            if (!shift) await loadOpeningStocks({ preserve: true });
-          } catch (_) {}
-        }
-
-        metaSigRef.current = sig;
-      } catch (e) {
-        const em = e?.message || "Gagal sync meta";
-        setMetaSyncErr(em);
-        if (!silent) setErr(em);
+        // ✅ kalau shift belum dibuka, refresh stok opening tanpa menghapus input kasir
+        try {
+          if (!shift) await loadOpeningStocks({ preserve: true });
+        } catch (_) {}
       }
+
+      metaSigRef.current = sig;
+    } catch (e) {
+      const em = e?.message || "Gagal sync meta";
+      setMetaSyncErr(em);
+      if (!silent) setErr(em);
     }
+  }
 
   // ===== SHIFT + CASH =====
   const [shift, setShift] = useState(null);
@@ -91,7 +92,6 @@ export default function CashierPOS() {
   const [cashMoveAmount, setCashMoveAmount] = useState(0);
   const [cashMoveNote, setCashMoveNote] = useState("");
 
-  
   // ===== OPENING STOCK (Inventory) =====
   const [invStocks, setInvStocks] = useState([]); // CART (per gerobak)
   const [invCentralStocks, setInvCentralStocks] = useState([]); // CENTRAL (read-only)
@@ -131,8 +131,8 @@ export default function CashierPOS() {
   // ===== BOOT LOADING =====
   const [booting, setBooting] = useState(true);
 
-  // ===== POS TABS (ringkas halaman) =====
-  const [mainTab, setMainTab] = useState("SELL"); // SELL | CASH | SHIFT
+  // ===== POS TABS =====
+  const [mainTab, setMainTab] = useState("SELL"); // SELL | CASH | SHIFT | STOCK
   const [cashTab, setCashTab] = useState("ALL"); // ALL | CASH_IN | CASH_OUT
 
   // ===== CLOSE SHIFT MODAL =====
@@ -188,32 +188,6 @@ export default function CashierPOS() {
     }
   }
 
-  const [activeTab, setActiveTab] = useState("antrian"); // sesuaikan default kamu
-const [stockItems, setStockItems] = useState([]);
-const [stockLoading, setStockLoading] = useState(false);
-const [stockErr, setStockErr] = useState("");
-
-async function loadStock() {
-  setStockLoading(true);
-  setStockErr("");
-  try {
-    const data = await apiGet("/cashier/stock", token);
-    setStockItems(data?.items || []);
-  } catch (e) {
-    setStockErr(e?.message || "Gagal memuat stok");
-  } finally {
-    setStockLoading(false);
-  }
-}
-
-useEffect(() => {
-  if (activeTab !== "stok") return;
-  loadStock();
-  const t = setInterval(loadStock, 5000); // realtime versi aman (polling)
-  return () => clearInterval(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [activeTab]);
-
   // ===== QUEUE LOAD =====
   async function loadQueue() {
     if (!token) return;
@@ -229,9 +203,7 @@ useEffect(() => {
     }
   }
 
-  
-
-    useEffect(() => {
+  useEffect(() => {
     if (!token) return;
 
     load({ boot: true });
@@ -252,10 +224,25 @@ useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // load opening stocks saat shift CLOSED
   useEffect(() => {
     if (!token) return;
-    if (shift) return; // hanya saat shift CLOSED
+    if (shift) return;
     loadOpeningStocks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, shift]);
+
+  // polling queue saat shift OPEN
+  useEffect(() => {
+    if (!token) return;
+    if (!shift) return;
+
+    loadQueue();
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") loadQueue();
+    }, 5000);
+
+    return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, shift]);
 
@@ -334,43 +321,47 @@ useEffect(() => {
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   }
-    async function loadOpeningStocks({ preserve = false } = {}) {
-      if (!token) return;
-      setInvErr("");
-      setInvLoading(true);
 
-      try {
-        const r = await apiGet("/api/cashier/inventory/stocks?includeCentral=true", token);
+  async function loadOpeningStocks({ preserve = false } = {}) {
+    if (!token) return;
+    setInvErr("");
+    setInvLoading(true);
 
-        const all = r?.stocks || [];
-        const cartStocks = all.filter((x) => !x.isGlobal);
-        const centralStocks = all.filter((x) => !!x.isGlobal);
+    try {
+      const r = await apiGet(
+        "/api/cashier/inventory/stocks?includeCentral=true",
+        token
+      );
 
-        setInvStocks(cartStocks);
-        setInvCentralStocks(centralStocks);
+      const all = r?.stocks || [];
+      const cartStocks = all.filter((x) => !x.isGlobal);
+      const centralStocks = all.filter((x) => !!x.isGlobal);
 
-        const prevChecked = preserve ? (openStockChecked || {}) : {};
-        const prevQty = preserve ? (openStockQty || {}) : {};
+      setInvStocks(cartStocks);
+      setInvCentralStocks(centralStocks);
 
-        const checked = {};
-        const qty = {};
+      const prevChecked = preserve ? openStockChecked || {} : {};
+      const prevQty = preserve ? openStockQty || {} : {};
 
-        for (const s of cartStocks) {
-          const core = isCoreStockName(s.name);
-          checked[s.id] = core ? true : !!prevChecked[s.id];
-          qty[s.id] = prevQty[s.id] ?? Number(s.qty ?? 0);
-        }
+      const checked = {};
+      const qty = {};
 
-        setOpenStockChecked(checked);
-        setOpenStockQty(qty);
-      } catch (e) {
-        setInvErr(e?.message || "Gagal load stok untuk pembukaan shift");
-        setInvStocks([]);
-        setInvCentralStocks([]);
-      } finally {
-        setInvLoading(false);
+      for (const s of cartStocks) {
+        const core = isCoreStockName(s.name);
+        checked[s.id] = core ? true : !!prevChecked[s.id];
+        qty[s.id] = prevQty[s.id] ?? Number(s.qty ?? 0);
       }
+
+      setOpenStockChecked(checked);
+      setOpenStockQty(qty);
+    } catch (e) {
+      setInvErr(e?.message || "Gagal load stok untuk pembukaan shift");
+      setInvStocks([]);
+      setInvCentralStocks([]);
+    } finally {
+      setInvLoading(false);
     }
+  }
 
   // ===== SHIFT OPS =====
   async function openShift() {
@@ -378,19 +369,21 @@ useEffect(() => {
     setMsg("");
 
     try {
-      // Build payload openingStocks
       const selected = (invStocks || []).filter((s) => openStockChecked[s.id]);
 
-      // Validasi core (kalau inventory aktif & core ada)
-      const hasCireng = (invStocks || []).some((s) => String(s.name || "").toLowerCase() === "cireng");
-      const hasKemasan = (invStocks || []).some((s) => String(s.name || "").toLowerCase() === "kemasan");
+      const hasCireng = (invStocks || []).some(
+        (s) => String(s.name || "").toLowerCase() === "cireng"
+      );
+      const hasKemasan = (invStocks || []).some(
+        (s) => String(s.name || "").toLowerCase() === "kemasan"
+      );
+
       if (hasCireng && !selected.some((s) => String(s.name || "").toLowerCase() === "cireng")) {
         throw new Error("Cireng wajib dipilih untuk stok awal.");
       }
       if (hasKemasan && !selected.some((s) => String(s.name || "").toLowerCase() === "kemasan")) {
         throw new Error("Kemasan wajib dipilih untuk stok awal.");
       }
-        
 
       const openingStocks = selected.map((s) => ({
         ingredientId: s.id,
@@ -401,7 +394,7 @@ useEffect(() => {
         "/api/shifts/open",
         {
           openingCash: Number(openingCash || 0),
-          openingStocks, // ✅ NEW
+          openingStocks,
         },
         token
       );
@@ -411,6 +404,7 @@ useEffect(() => {
       const sum = await apiGet("/api/shifts/summary", token);
       setSummary(sum.summary);
       setMovements([]);
+      await loadQueue();
 
       setMsg("Shift dibuka.");
     } catch (e) {
@@ -431,7 +425,6 @@ useEffect(() => {
 
       await apiPost("/api/shifts/close", { closingCash: closing }, token);
 
-      // reset local state
       setShift(null);
       setSummary(null);
       setMovements([]);
@@ -506,6 +499,7 @@ useEffect(() => {
       setDiscount(0);
       setPaymentMethod("CASH");
       setNote("");
+      await loadQueue();
     } catch (e) {
       setErr(e?.message || "Gagal simpan transaksi");
     }
@@ -522,9 +516,7 @@ useEffect(() => {
 
       const dup = (queue || []).some(
         (q) =>
-          String(q.customerName || "")
-            .trim()
-            .toLowerCase() === cn.toLowerCase()
+          String(q.customerName || "").trim().toLowerCase() === cn.toLowerCase()
       );
       if (dup) throw new Error("Nama pelanggan sudah ada di antrian.");
 
@@ -840,6 +832,16 @@ useEffect(() => {
                 <span className="pill pill--soft">
                   Sync <b>{syncText}</b>
                 </span>
+
+                <button
+                  className="btn secondary btn--sm"
+                  type="button"
+                  onClick={logout}
+                  title="Logout Kasir"
+                >
+                  Logout
+                </button>
+
                 {shift ? (
                   <button
                     className="btn danger btn--sm"
@@ -888,11 +890,27 @@ useEffect(() => {
                           onChange={(e) => setOpeningCash(e.target.value)}
                         />
                       </div>
+
                       <div style={{ marginTop: 14 }}>
-                        <div className="pos-section-head" style={{ marginBottom: 8 }}>
-                          <h3 className="pos-h3" style={{ margin: 0 }}>Stok Awal (per gerobak)</h3>
-                          <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end" }}>
-                            <span className="muted">Centang bahan yang kamu simpan hari ini. Cireng & Kemasan wajib.</span>
+                        <div
+                          className="pos-section-head"
+                          style={{ marginBottom: 8 }}
+                        >
+                          <h3 className="pos-h3" style={{ margin: 0 }}>
+                            Stok Awal (per gerobak)
+                          </h3>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 10,
+                              alignItems: "center",
+                              justifyContent: "flex-end",
+                            }}
+                          >
+                            <span className="muted">
+                              Centang bahan yang kamu simpan hari ini. Cireng &
+                              Kemasan wajib.
+                            </span>
                             <button
                               className="btn secondary btn--sm"
                               type="button"
@@ -904,12 +922,17 @@ useEffect(() => {
                         </div>
 
                         {invErr ? (
-                          <div className="toast toast--danger" style={{ marginBottom: 10 }}>{invErr}</div>
+                          <div
+                            className="toast toast--danger"
+                            style={{ marginBottom: 10 }}
+                          >
+                            {invErr}
+                          </div>
                         ) : null}
 
                         {invLoading ? (
                           <div className="muted">Memuat daftar bahan...</div>
-                        ) : (invStocks?.length ? (
+                        ) : invStocks?.length ? (
                           <div style={{ display: "grid", gap: 10 }}>
                             {invStocks.map((s) => {
                               const core = isCoreStockName(s.name);
@@ -927,22 +950,48 @@ useEffect(() => {
                                     alignItems: "center",
                                   }}
                                 >
-                                  <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                  <label
+                                    style={{
+                                      display: "flex",
+                                      gap: 10,
+                                      alignItems: "center",
+                                    }}
+                                  >
                                     <input
                                       type="checkbox"
                                       checked={checked}
                                       disabled={core}
                                       onChange={(e) =>
-                                        setOpenStockChecked((prev) => ({ ...prev, [s.id]: e.target.checked }))
+                                        setOpenStockChecked((prev) => ({
+                                          ...prev,
+                                          [s.id]: e.target.checked,
+                                        }))
                                       }
                                     />
                                     <div>
                                       <div style={{ fontWeight: 700 }}>
-                                        {s.name} <span className="muted" style={{ fontWeight: 500 }}>({s.unit})</span>
-                                        {core ? <span className="pill pill--soft" style={{ marginLeft: 8 }}>Wajib</span> : null}
+                                        {s.name}{" "}
+                                        <span
+                                          className="muted"
+                                          style={{ fontWeight: 500 }}
+                                        >
+                                          ({s.unit})
+                                        </span>
+                                        {core ? (
+                                          <span
+                                            className="pill pill--soft"
+                                            style={{ marginLeft: 8 }}
+                                          >
+                                            Wajib
+                                          </span>
+                                        ) : null}
                                       </div>
-                                      <div className="muted" style={{ fontSize: 12 }}>
-                                        Stok terakhir: <b>{Number(s.qty ?? 0)}</b>
+                                      <div
+                                        className="muted"
+                                        style={{ fontSize: 12 }}
+                                      >
+                                        Stok terakhir:{" "}
+                                        <b>{Number(s.qty ?? 0)}</b>
                                       </div>
                                     </div>
                                   </label>
@@ -955,7 +1004,10 @@ useEffect(() => {
                                     disabled={!checked}
                                     value={openStockQty[s.id] ?? 0}
                                     onChange={(e) =>
-                                      setOpenStockQty((prev) => ({ ...prev, [s.id]: e.target.value }))
+                                      setOpenStockQty((prev) => ({
+                                        ...prev,
+                                        [s.id]: e.target.value,
+                                      }))
                                     }
                                   />
                                 </div>
@@ -964,18 +1016,22 @@ useEffect(() => {
                           </div>
                         ) : (
                           <div className="muted">
-                            Inventory belum aktif / belum ada bahan. (Admin perlu tambah ingredient seperti Cireng & Kemasan.)
+                            Inventory belum aktif / belum ada bahan. (Admin perlu
+                            tambah ingredient seperti Cireng & Kemasan.)
                           </div>
-                        ))}
+                        )}
                       </div>
+
                       <div className="pos-actions">
                         <button className="btn" type="button" onClick={openShift}>
                           Buka Shift
                         </button>
+
                         {invCentralStocks?.length ? (
                           <details style={{ marginTop: 12 }}>
                             <summary className="muted" style={{ cursor: "pointer" }}>
-                              Lihat stok CENTRAL (read-only) • {invCentralStocks.length} bahan
+                              Lihat stok CENTRAL (read-only) •{" "}
+                              {invCentralStocks.length} bahan
                             </summary>
                             <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                               {invCentralStocks.map((s) => (
@@ -992,8 +1048,13 @@ useEffect(() => {
                                 >
                                   <div>
                                     <div style={{ fontWeight: 700 }}>
-                                      {s.name} <span className="muted" style={{ fontWeight: 500 }}>({s.unit})</span>
-                                      <span className="pill pill--soft" style={{ marginLeft: 8 }}>Central</span>
+                                      {s.name}{" "}
+                                      <span className="muted" style={{ fontWeight: 500 }}>
+                                        ({s.unit})
+                                      </span>
+                                      <span className="pill pill--soft" style={{ marginLeft: 8 }}>
+                                        Central
+                                      </span>
                                     </div>
                                     <div className="muted" style={{ fontSize: 12 }}>
                                       Catatan: bahan CENTRAL dikelola Admin, bukan stok per gerobak.
@@ -1010,15 +1071,13 @@ useEffect(() => {
                   </div>
                 ) : (
                   <>
-                    {/* MAIN TABS (ringkas halaman) */}
+                    {/* MAIN TABS */}
                     <div className="pos-section" style={{ paddingBottom: 10 }}>
                       <div className="pos-section-head">
                         <h3 className="pos-h3" style={{ margin: 0 }}>
                           Kasir
                         </h3>
-                        <span className="muted">
-                          Ringkas: Jualan • Cash • Shift
-                        </span>
+                        <span className="muted">Ringkas: Jualan • Cash • Shift • Stok</span>
                       </div>
 
                       <Tabs
@@ -1026,7 +1085,7 @@ useEffect(() => {
                           { value: "SELL", label: "Jualan" },
                           { value: "CASH", label: "Cash In/Out" },
                           { value: "SHIFT", label: "Shift" },
-                          { value: "stok", label: "Stok" },
+                          { value: "STOCK", label: "Stok" },
                         ]}
                         value={mainTab}
                         onChange={setMainTab}
@@ -1041,8 +1100,7 @@ useEffect(() => {
                           <div className="pos-section-head">
                             <h3 className="pos-h3">Promo</h3>
                             <span className="muted">
-                              Pilih promo untuk transaksi langsung / checkout
-                              antrian
+                              Pilih promo untuk transaksi langsung / checkout antrian
                             </span>
                           </div>
 
@@ -1052,31 +1110,21 @@ useEffect(() => {
                               return (
                                 <div
                                   key={p.id}
-                                  className={`prod ${
-                                    p.isActive === false ? "prod--disabled" : ""
-                                  }`}
+                                  className={`prod ${p.isActive === false ? "prod--disabled" : ""}`}
                                 >
                                   <div className="prod-head">
                                     <b className="prod-title">{p.name}</b>
                                     {active ? (
-                                      <span className="pill pill--ok">
-                                        Dipakai
-                                      </span>
+                                      <span className="pill pill--ok">Dipakai</span>
                                     ) : (
-                                      <span className="pill pill--neutral">
-                                        Opsional
-                                      </span>
+                                      <span className="pill pill--neutral">Opsional</span>
                                     )}
                                   </div>
 
                                   <small className="muted">
                                     {p.type === "DISCOUNT_PERCENT"
-                                      ? `Diskon ${
-                                          p.discountPercent || 0
-                                        }% (Min ${rupiah(p.minSubtotal || 0)})`
-                                      : `Bonus x${p.bonusQty || 0} (Min ${rupiah(
-                                          p.minSubtotal || 0
-                                        )})`}
+                                      ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(p.minSubtotal || 0)})`
+                                      : `Bonus x${p.bonusQty || 0} (Min ${rupiah(p.minSubtotal || 0)})`}
                                   </small>
 
                                   <div className="prod-actions">
@@ -1109,10 +1157,7 @@ useEffect(() => {
                           </div>
 
                           {metaSyncErr ? (
-                            <div
-                              className="toast toast--danger"
-                              style={{ marginTop: 10 }}
-                            >
+                            <div className="toast toast--danger" style={{ marginTop: 10 }}>
                               Sync error: {metaSyncErr}
                             </div>
                           ) : null}
@@ -1122,8 +1167,7 @@ useEffect(() => {
                               <div key={p.id} className="prod">
                                 <b className="prod-title">{p.name}</b>
                                 <small className="muted">
-                                  Kecil {rupiah(p.priceSmall)} • Besar{" "}
-                                  {rupiah(p.priceLarge)}
+                                  Kecil {rupiah(p.priceSmall)} • Besar {rupiah(p.priceLarge)}
                                 </small>
 
                                 <div className="prod-actions prod-actions--split">
@@ -1154,9 +1198,7 @@ useEffect(() => {
                           <div className="pos-section-head">
                             <h3 className="pos-h3">Keranjang</h3>
                             <span className="muted">
-                              {cart.length
-                                ? `${cart.length} item`
-                                : "Belum ada item"}
+                              {cart.length ? `${cart.length} item` : "Belum ada item"}
                             </span>
                           </div>
 
@@ -1177,9 +1219,7 @@ useEffect(() => {
                                   {cart.map((it) => (
                                     <tr key={it.key}>
                                       <td>
-                                        <div>
-                                          <b>{it.name}</b>
-                                        </div>
+                                        <div><b>{it.name}</b></div>
                                         <div style={{ marginTop: 8 }}>
                                           <input
                                             className="input"
@@ -1189,10 +1229,7 @@ useEffect(() => {
                                               setCart((prev) =>
                                                 prev.map((x) =>
                                                   x.key === it.key
-                                                    ? {
-                                                        ...x,
-                                                        itemNote: e.target.value,
-                                                      }
+                                                    ? { ...x, itemNote: e.target.value }
                                                     : x
                                                 )
                                               )
@@ -1219,9 +1256,7 @@ useEffect(() => {
                                           </button>
                                         </div>
                                       </td>
-                                      <td>
-                                        <b>{rupiah(it.price * it.qty)}</b>
-                                      </td>
+                                      <td><b>{rupiah(it.price * it.qty)}</b></td>
                                       <td>
                                         <button
                                           className="btn danger"
@@ -1339,9 +1374,7 @@ useEffect(() => {
                         <div className="pos-section">
                           <div className="pos-section-head">
                             <h3 className="pos-h3">Cash In/Out</h3>
-                            <span className="muted">
-                              Catat pengeluaran / tambah kas
-                            </span>
+                            <span className="muted">Catat pengeluaran / tambah kas</span>
                           </div>
 
                           <div style={{ marginTop: 6 }}>
@@ -1414,14 +1447,8 @@ useEffect(() => {
                           <Tabs
                             items={[
                               { value: "ALL", label: `Semua (${movementStats.total})` },
-                              {
-                                value: "CASH_IN",
-                                label: `Cash In (${movementStats.cashInCount})`,
-                              },
-                              {
-                                value: "CASH_OUT",
-                                label: `Cash Out (${movementStats.cashOutCount})`,
-                              },
+                              { value: "CASH_IN", label: `Cash In (${movementStats.cashInCount})` },
+                              { value: "CASH_OUT", label: `Cash Out (${movementStats.cashOutCount})` },
                             ]}
                             value={cashTab}
                             onChange={setCashTab}
@@ -1442,25 +1469,17 @@ useEffect(() => {
                                   <tbody>
                                     {movementsFiltered.slice(0, 20).map((m) => (
                                       <tr key={m.id}>
-                                        <td>
-                                          {new Date(m.createdAt).toLocaleTimeString(
-                                            "id-ID"
-                                          )}
-                                        </td>
+                                        <td>{new Date(m.createdAt).toLocaleTimeString("id-ID")}</td>
                                         <td>
                                           <span
                                             className={`badge ${
-                                              m.type === "CASH_IN"
-                                                ? "badge--accent1"
-                                                : "badge--danger"
+                                              m.type === "CASH_IN" ? "badge--accent1" : "badge--danger"
                                             }`}
                                           >
                                             {m.type}
                                           </span>
                                         </td>
-                                        <td>
-                                          <b>{rupiah(m.amount)}</b>
-                                        </td>
+                                        <td><b>{rupiah(m.amount)}</b></td>
                                         <td className="muted">{m.note || "-"}</td>
                                       </tr>
                                     ))}
@@ -1468,9 +1487,7 @@ useEffect(() => {
                                 </table>
                               </div>
                             ) : (
-                              <div className="muted">
-                                Belum ada data untuk filter ini.
-                              </div>
+                              <div className="muted">Belum ada data untuk filter ini.</div>
                             )}
                           </div>
                         </div>
@@ -1491,45 +1508,25 @@ useEffect(() => {
                               <div className="col">
                                 <div className="card">
                                   <div className="muted">Modal Awal</div>
-                                  <div>
-                                    <b>{rupiah(summary.openingCash)}</b>
-                                  </div>
+                                  <div><b>{rupiah(summary.openingCash)}</b></div>
 
-                                  <div className="muted" style={{ marginTop: 10 }}>
-                                    Penjualan CASH
-                                  </div>
-                                  <div>
-                                    <b>{rupiah(summary.cashSales)}</b>
-                                  </div>
+                                  <div className="muted" style={{ marginTop: 10 }}>Penjualan CASH</div>
+                                  <div><b>{rupiah(summary.cashSales)}</b></div>
 
-                                  <div className="muted" style={{ marginTop: 10 }}>
-                                    Penjualan QRIS
-                                  </div>
-                                  <div>
-                                    <b>{rupiah(summary.qrisSales)}</b>
-                                  </div>
+                                  <div className="muted" style={{ marginTop: 10 }}>Penjualan QRIS</div>
+                                  <div><b>{rupiah(summary.qrisSales)}</b></div>
                                 </div>
                               </div>
                               <div className="col">
                                 <div className="card">
                                   <div className="muted">Cash IN</div>
-                                  <div>
-                                    <b>{rupiah(summary.cashIn)}</b>
-                                  </div>
+                                  <div><b>{rupiah(summary.cashIn)}</b></div>
 
-                                  <div className="muted" style={{ marginTop: 10 }}>
-                                    Cash OUT
-                                  </div>
-                                  <div>
-                                    <b>{rupiah(summary.cashOut)}</b>
-                                  </div>
+                                  <div className="muted" style={{ marginTop: 10 }}>Cash OUT</div>
+                                  <div><b>{rupiah(summary.cashOut)}</b></div>
 
-                                  <div className="muted" style={{ marginTop: 10 }}>
-                                    Expected Cash
-                                  </div>
-                                  <div style={{ fontSize: 18 }}>
-                                    <b>{rupiah(summary.expectedCash)}</b>
-                                  </div>
+                                  <div className="muted" style={{ marginTop: 10 }}>Expected Cash</div>
+                                  <div style={{ fontSize: 18 }}><b>{rupiah(summary.expectedCash)}</b></div>
                                 </div>
                               </div>
                             </div>
@@ -1543,9 +1540,7 @@ useEffect(() => {
                         <div className="pos-section">
                           <div className="pos-section-head">
                             <h3 className="pos-h3">Tutup Shift</h3>
-                            <span className="muted">
-                              Kas fisik & konfirmasi ada di popup
-                            </span>
+                            <span className="muted">Kas fisik & konfirmasi ada di popup</span>
                           </div>
 
                           <div className="pos-actions" style={{ marginTop: 12 }}>
@@ -1569,67 +1564,20 @@ useEffect(() => {
                       </>
                     ) : null}
 
-                    {mainTab === "stok" && (
-                      <div className="card" style={{ padding: 16 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                          <div>
-                            <div style={{ fontWeight: 800, fontSize: 16 }}>Stok Gerobak</div>
-                            <div style={{ opacity: 0.7, fontSize: 12 }}>Auto refresh tiap 5 detik</div>
-                          </div>
-                          <button className="btn btn-primary" onClick={loadStock} disabled={stockLoading}>
-                            {stockLoading ? "Memuat..." : "Refresh"}
-                          </button>
-                        </div>
-
-                        {stockErr ? (
-                          <div style={{ marginTop: 12 }} className="alert alert-danger">
-                            {stockErr}
-                          </div>
-                        ) : null}
-
-                        <div style={{ marginTop: 12, overflowX: "auto" }}>
-                          <table className="table" style={{ width: "100%", minWidth: 520 }}>
-                            <thead>
-                              <tr>
-                                <th style={{ textAlign: "left" }}>Item</th>
-                                <th style={{ textAlign: "right" }}>Qty</th>
-                                <th style={{ textAlign: "left" }}>Unit</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {stockItems.length ? (
-                                stockItems.map((s) => (
-                                  <tr key={s.itemId}>
-                                    <td>{s.name}</td>
-                                    <td style={{ textAlign: "right", fontWeight: 700 }}>{Number(s.qty || 0)}</td>
-                                    <td>{s.unit}</td>
-                                  </tr>
-                                ))
-                              ) : (
-                                <tr>
-                                  <td colSpan={3} style={{ opacity: 0.7 }}>Belum ada data stok.</td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    
+                    {/* ===== TAB: STOCK ===== */}
+                    {mainTab === "STOCK" ? (
+                      <CashierStockPanel token={token} meta={meta} shift={shift} cartName={cartName} />
+                    ) : null}
                   </>
                 )}
               </div>
             </div>
-            
 
             {/* RIGHT */}
             <div className="pos-col">
               <div className="pos-card">
                 <div className="pos-section-head pos-section-head--tight">
-                  <h3 className="pos-h3" style={{ margin: 0 }}>
-                    Antrian Pesanan
-                  </h3>
+                  <h3 className="pos-h3" style={{ margin: 0 }}>Antrian Pesanan</h3>
 
                   <div className="pos-right-tools" aria-live="polite">
                     {qLoading ? (
@@ -1644,14 +1592,11 @@ useEffect(() => {
                 </div>
 
                 <div className="muted" style={{ marginTop: 8 }}>
-                  Pesanan yang sudah masuk antrian belum dibayar. Klik untuk buka &
-                  selesaikan.
+                  Pesanan yang sudah masuk antrian belum dibayar. Klik untuk buka & selesaikan.
                 </div>
 
                 {qErr ? (
-                  <div className="toast toast--danger" style={{ marginTop: 12 }}>
-                    {qErr}
-                  </div>
+                  <div className="toast toast--danger" style={{ marginTop: 12 }}>{qErr}</div>
                 ) : null}
 
                 <div className="hr" />
@@ -1671,16 +1616,13 @@ useEffect(() => {
                           <div className="queue-left">
                             <div className="queue-name">{o.customerName}</div>
                             <div className="queue-sub">
-                              {new Date(o.createdAt).toLocaleTimeString("id-ID")} •{" "}
-                              {o.itemCount || 0} item
+                              {new Date(o.createdAt).toLocaleTimeString("id-ID")} • {o.itemCount || 0} item
                             </div>
                           </div>
 
                           <div className="queue-right">
                             <div className="queue-sub">Estimasi</div>
-                            <div className="queue-total">
-                              {rupiah(o.grossTotal || 0)}
-                            </div>
+                            <div className="queue-total">{rupiah(o.grossTotal || 0)}</div>
                           </div>
                         </div>
                       </button>
@@ -1719,45 +1661,25 @@ useEffect(() => {
                     <div className="col">
                       <div className="card">
                         <div className="muted">Modal Awal</div>
-                        <div>
-                          <b>{rupiah(summary.openingCash)}</b>
-                        </div>
+                        <div><b>{rupiah(summary.openingCash)}</b></div>
 
-                        <div className="muted" style={{ marginTop: 10 }}>
-                          Penjualan CASH
-                        </div>
-                        <div>
-                          <b>{rupiah(summary.cashSales)}</b>
-                        </div>
+                        <div className="muted" style={{ marginTop: 10 }}>Penjualan CASH</div>
+                        <div><b>{rupiah(summary.cashSales)}</b></div>
 
-                        <div className="muted" style={{ marginTop: 10 }}>
-                          Penjualan QRIS
-                        </div>
-                        <div>
-                          <b>{rupiah(summary.qrisSales)}</b>
-                        </div>
+                        <div className="muted" style={{ marginTop: 10 }}>Penjualan QRIS</div>
+                        <div><b>{rupiah(summary.qrisSales)}</b></div>
                       </div>
                     </div>
                     <div className="col">
                       <div className="card">
                         <div className="muted">Cash IN</div>
-                        <div>
-                          <b>{rupiah(summary.cashIn)}</b>
-                        </div>
+                        <div><b>{rupiah(summary.cashIn)}</b></div>
 
-                        <div className="muted" style={{ marginTop: 10 }}>
-                          Cash OUT
-                        </div>
-                        <div>
-                          <b>{rupiah(summary.cashOut)}</b>
-                        </div>
+                        <div className="muted" style={{ marginTop: 10 }}>Cash OUT</div>
+                        <div><b>{rupiah(summary.cashOut)}</b></div>
 
-                        <div className="muted" style={{ marginTop: 10 }}>
-                          Expected Cash
-                        </div>
-                        <div style={{ fontSize: 18 }}>
-                          <b>{rupiah(summary.expectedCash)}</b>
-                        </div>
+                        <div className="muted" style={{ marginTop: 10 }}>Expected Cash</div>
+                        <div style={{ fontSize: 18 }}><b>{rupiah(summary.expectedCash)}</b></div>
                       </div>
                     </div>
                   </div>
@@ -1776,9 +1698,7 @@ useEffect(() => {
                       value={closingCash}
                       onChange={(e) => setClosingCash(e.target.value)}
                       placeholder={
-                        summary?.expectedCash != null
-                          ? `Expected: ${rupiah(summary.expectedCash)}`
-                          : ""
+                        summary?.expectedCash != null ? `Expected: ${rupiah(summary.expectedCash)}` : ""
                       }
                     />
                     {summary?.expectedCash != null && String(closingCash) !== "" ? (
@@ -1787,8 +1707,7 @@ useEffect(() => {
                         const closing = Number(closingCash || 0);
                         if (!Number.isFinite(closing)) return null;
                         const v = closing - expected;
-                        const label =
-                          v === 0 ? "PAS" : v > 0 ? "LEBIH" : "KURANG";
+                        const label = v === 0 ? "PAS" : v > 0 ? "LEBIH" : "KURANG";
                         return (
                           <div className="muted" style={{ marginTop: 8, fontSize: 12 }}>
                             Selisih: <b>{rupiah(Math.abs(v))}</b> ({label})
@@ -1883,9 +1802,7 @@ useEffect(() => {
                           </td>
                           <td>{it.qty}</td>
                           <td>
-                            <b>
-                              {rupiah(Number(it.price || 0) * Number(it.qty || 0))}
-                            </b>
+                            <b>{rupiah(Number(it.price || 0) * Number(it.qty || 0))}</b>
                           </td>
                         </tr>
                       ))}
@@ -1914,12 +1831,8 @@ useEffect(() => {
                         </div>
                         <small className="muted">
                           {p.type === "DISCOUNT_PERCENT"
-                            ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(
-                                p.minSubtotal || 0
-                              )})`
-                            : `Bonus x${p.bonusQty || 0} (Min ${rupiah(
-                                p.minSubtotal || 0
-                              )})`}
+                            ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(p.minSubtotal || 0)})`
+                            : `Bonus x${p.bonusQty || 0} (Min ${rupiah(p.minSubtotal || 0)})`}
                         </small>
                         <div className="prod-actions">
                           <button
@@ -1984,38 +1897,20 @@ useEffect(() => {
                 <div className="modal-foot">
                   <div className="modal-totals">
                     <div className="muted">Gross</div>
-                    <div>
-                      <b>{rupiah(openOrder.grossTotal || 0)}</b>
-                    </div>
+                    <div><b>{rupiah(openOrder.grossTotal || 0)}</b></div>
 
-                    <div className="muted" style={{ marginTop: 6 }}>
-                      Diskon Promo
-                    </div>
-                    <div>
-                      <b>{rupiah(checkoutPromoDiscount)}</b>
-                    </div>
+                    <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
+                    <div><b>{rupiah(checkoutPromoDiscount)}</b></div>
 
-                    <div className="muted" style={{ marginTop: 6 }}>
-                      Net
-                    </div>
-                    <div className="modal-net">
-                      <b>{rupiah(checkoutNetTotal)}</b>
-                    </div>
+                    <div className="muted" style={{ marginTop: 6 }}>Net</div>
+                    <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
                   </div>
 
                   <div className="modal-actions">
-                    <button
-                      className="btn danger"
-                      type="button"
-                      onClick={() => cancelOrder(openOrder.id)}
-                    >
+                    <button className="btn danger" type="button" onClick={() => cancelOrder(openOrder.id)}>
                       Batalkan Order
                     </button>
-                    <button
-                      className="btn"
-                      type="button"
-                      onClick={() => checkoutOrder(openOrder.id)}
-                    >
+                    <button className="btn" type="button" onClick={() => checkoutOrder(openOrder.id)}>
                       Selesaikan & Bayar
                     </button>
                   </div>

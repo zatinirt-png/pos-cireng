@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 export default function Modal({
   open,
@@ -10,6 +11,7 @@ export default function Modal({
 }) {
   useEffect(() => {
     if (!open) return;
+
     const onKey = (e) => {
       if (e.key === "Escape") onClose?.();
     };
@@ -26,7 +28,7 @@ export default function Modal({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="modal-overlay"
       role="presentation"
@@ -55,6 +57,7 @@ export default function Modal({
 
         {footer ? <div className="modal-footer">{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

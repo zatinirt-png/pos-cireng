@@ -3,6 +3,7 @@ import { apiGet, apiPost, apiPatch, apiDelete } from "../api";
 import { useNavigate } from "react-router-dom";
 import Tabs from "../components/ui/Tabs";
 import Modal from "../components/ui/Modal";
+import TransferRequestsPanel from "../components/admin/TransferRequestsPanel";
 
 function rupiah(amount) {
   const n = Number(amount || 0);
@@ -22,6 +23,25 @@ function fmtDT(dt) {
   } catch {
     return String(dt);
   }
+}
+
+function compactCentralInfo(row) {
+  const reason = String(row?.lastReason || "").trim().toUpperCase();
+  const note = String(row?.lastNote || "").trim();
+  const n = note.toLowerCase();
+
+  // ✅ yang kamu minta: hilangkan ID, cukup 1 label
+  if (n.includes("transfer to cart")) return "Transfer to Cart";
+  if (n.includes("opening stock")) return "Opening Stock";
+
+  // fallback dari reason (kalau note kosong)
+  if (reason === "SHIFT_OPENING") return "Shift Opening";
+  if (reason === "TRANSFER_OUT") return "Transfer to Cart";
+  if (reason === "TRANSFER_IN") return "Transfer In";
+  if (reason === "ADJUSTMENT") return "Adjustment";
+
+  // default terakhir
+  return reason || "-";
 }
 
 export default function AdminInventory() {
@@ -597,6 +617,7 @@ export default function AdminInventory() {
                 items={[
                   { value: "STOCK", label: "Stok" },
                   { value: "ING", label: "Bahan" },
+                  { value: "TRANSFER", label: "Transfer Requests" }
                 ]}
                 value={tab}
                 onChange={setTab}
@@ -605,7 +626,7 @@ export default function AdminInventory() {
               {/* ===== TAB STOCK ===== */}
               {tab === "STOCK" ? (
                 <>
-                  <div className="adm-panel" style={{ marginTop: 14 }}>
+                  <div style={{ marginTop: 14 }}>
                     <section className="adm-panel">
                       <div className="adm-panel-head">
                         <h3 className="adm-h3">Filter</h3>
@@ -705,7 +726,7 @@ export default function AdminInventory() {
                     </section>
                   </div>
 
-                  <div className="adm-panel" style={{ marginTop: 14 }}>
+                  <div style={{ marginTop: 14 }}>
                     <section className="adm-panel">
                       <div className="adm-panel-head">
                         <h3 className="adm-h3">Daftar Stok</h3>
@@ -761,7 +782,9 @@ export default function AdminInventory() {
                                   <td data-label="Update Terakhir">
                                     <div style={{ fontWeight: 700 }}>{fmtDT(lastAt)}</div>
                                     <div className="muted" style={{ fontSize: 12 }}>
-                                      {(row?.lastReason || "-")}{row?.lastNote ? ` • ${row.lastNote}` : ""}
+                                      {scope === "CENTRAL"
+                                        ? compactCentralInfo(row)
+                                        : `${row?.lastReason || "-"}`}
                                     </div>
                                   </td>
 
@@ -930,7 +953,7 @@ export default function AdminInventory() {
 
               {/* ===== TAB INGREDIENTS ===== */}
               {tab === "ING" ? (
-                <div className="adm-panel" style={{ marginTop: 14 }}>
+                <div style={{ marginTop: 14 }}>
                   <section className="adm-panel">
                     <div className="adm-panel-head">
                       <h3 className="adm-h3">Kelola Bahan</h3>
@@ -971,7 +994,7 @@ export default function AdminInventory() {
                     {ingErr ? <div className="adm-alert" style={{ marginTop: 12 }}>{ingErr}</div> : null}
                     {ingMsg ? <div className="adm-alert adm-alert--ok" style={{ marginTop: 12 }}>{ingMsg}</div> : null}
 
-                    <div className="adm-panel" style={{ marginTop: 14 }}>
+                    <div style={{ marginTop: 14 }}>
                       {/* FORM */}
                       <section className="adm-panel">
                         <div className="adm-panel-head">
@@ -1113,6 +1136,9 @@ export default function AdminInventory() {
                     </div>
                   </section>
                 </div>
+              ) : null}
+              {tab === "TRANSFER" ? (
+                <TransferRequestsPanel token={token} carts={carts} />
               ) : null}
             </div>
           </main>

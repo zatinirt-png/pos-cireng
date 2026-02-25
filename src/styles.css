@@ -2771,3 +2771,381 @@ label{ font-size: 12px; opacity: 0.8; display: block; margin-bottom: 6px; }
   .adm.adm-inventory .adm-table{ min-width: 980px; }
 }
 
+/* =========================================================
+   ADMIN INVENTORY: Batasi tinggi ke viewport (biar ga "panjang")
+   ========================================================= */
+.adm-bg.adm-inventory{
+  height: calc(100vh - var(--topbar-h));
+  min-height: calc(100vh - var(--topbar-h));
+  overflow: hidden; /* stop body/page jadi panjang */
+}
+
+/* pastikan layout bisa "mengunci" tinggi */
+.adm-bg.adm-inventory .adm-shell{ height: 100%; }
+.adm-bg.adm-inventory .adm-layout{ height: 100%; align-items: stretch; }
+
+/* sidebar tetap usable: scroll di dalam card */
+.adm-bg.adm-inventory .adm-nav{
+  position: sticky;
+  top: calc(var(--topbar-h) + 14px);
+  height: calc(100vh - var(--topbar-h) - 28px);
+}
+.adm-bg.adm-inventory .adm-nav-card{
+  max-height: calc(100vh - var(--topbar-h) - 28px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* main card jadi area scroll utama */
+.adm-bg.adm-inventory .adm-main{ min-height: 0; }
+.adm-bg.adm-inventory .adm-main-card{
+  height: calc(100vh - var(--topbar-h) - 28px);
+  overflow: auto !important;        /* kunci: scroll di dalam card */
+  overscroll-behavior: contain;
+  padding-bottom: 18px;             /* biar konten terakhir ga mepet */
+}
+
+/* tetap izinkan table inventory horizontal scroll */
+.adm.adm-inventory .adm-table-wrap{
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile: balik ke scroll normal (biar nyaman) */
+@media (max-width: 980px){
+  .adm-bg.adm-inventory{
+    height: auto;
+    min-height: calc(100vh - var(--topbar-h));
+    overflow: visible;
+  }
+  .adm-bg.adm-inventory .adm-layout{ height: auto; }
+  .adm-bg.adm-inventory .adm-nav{ position: relative; top: 0; height: auto; }
+  .adm-bg.adm-inventory .adm-nav-card{ max-height: none; overflow: visible; }
+  .adm-bg.adm-inventory .adm-main-card{
+    height: auto;
+    overflow: visible !important;
+  }
+}
+
+/* =========================================================
+   MODAL/POPUP: selalu di tengah & tidak ikut scroll
+   ========================================================= */
+.modal-overlay{
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 18px;
+  background: rgba(15,23,42,0.45);
+  backdrop-filter: blur(2px);
+  z-index: 9999;
+  overflow: auto; /* kalau modal tinggi, scrollnya di overlay */
+}
+
+/* Modal component (Modal.jsx) */
+.modal{
+  position: relative;
+  width: min(980px, 96vw);
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  background: rgba(255,255,255,0.94);
+  border: 1px solid rgba(225,205,169,0.55);
+  border-radius: 22px;
+  box-shadow: 0 22px 70px rgba(15,23,42,0.22);
+  padding: 14px;
+  margin: auto;
+}
+
+/* Modal versi "modal-card" (dipakai di CashierPOS close shift / checkout) */
+.modal-card{
+  position: relative;
+  width: min(980px, 96vw);
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  background: rgba(255,255,255,0.94);
+  border: 1px solid rgba(225,205,169,0.55);
+  border-radius: 22px;
+  box-shadow: 0 22px 70px rgba(15,23,42,0.22);
+  margin: auto;
+}
+
+/* Header modal lebih jelas */
+.modal-header,
+.modal-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(225,205,169,0.45);
+  margin-bottom: 12px;
+}
+
+.modal-title{
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+  color: rgba(15,23,42,0.95);
+}
+
+.modal-footer,
+.modal-foot{
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(225,205,169,0.45);
+  background: rgba(255,255,255,0.94);
+}
+
+/* Optional: lock scroll background di Chrome modern */
+html:has(.modal-overlay),
+body:has(.modal-overlay){
+  overflow: hidden !important;
+}
+
+/* ===== FINAL OVERRIDE: modal harus selalu full-viewport ===== */
+.modal-overlay{
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 18px !important;
+  background: rgba(15,23,42,0.45) !important;
+  z-index: 99999 !important;
+  overflow: auto !important; /* kalau modal tinggi, scroll di overlay */
+}
+
+.modal{
+  width: min(980px, 96vw) !important;
+  max-height: calc(100vh - 120px) !important;
+  overflow: auto !important;
+  background: rgba(255,255,255,0.94) !important;
+  border: 1px solid rgba(225,205,169,0.55) !important;
+  border-radius: 22px !important;
+  box-shadow: 0 22px 70px rgba(15,23,42,0.22) !important;
+  padding: 14px !important;
+}
+
+.modal-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(225,205,169,0.45);
+  margin-bottom: 12px;
+}
+
+.modal-title{
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+  color: rgba(15,23,42,0.95);
+}
+
+.modal-footer{
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(225,205,169,0.45);
+  background: rgba(255,255,255,0.94);
+}
+
+/* =========================================================
+   FIX: Admin Inventory melebar saat switch scope (CENTRAL/CART)
+   Penyebab: flex child min-width:auto + elemen tidak wrap -> dorong layout
+   ========================================================= */
+.adm-bg.adm-inventory,
+.adm-bg.adm-inventory .adm-shell,
+.adm-bg.adm-inventory .adm-layout{
+  max-width: 100%;
+  overflow-x: hidden; /* kunci agar page tidak melebar */
+}
+
+/* flex children wajib bisa shrink */
+.adm-bg.adm-inventory .adm-layout > *{
+  min-width: 0; /* INI KUNCI UTAMA */
+}
+
+/* main card jangan ikut melebar */
+.adm-bg.adm-inventory .adm-main,
+.adm-bg.adm-inventory .adm-main-card{
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* konten dalam main-card boleh scroll vertical, tapi horizontal dikunci */
+.adm-bg.adm-inventory .adm-main-card{
+  overflow-x: hidden !important;
+}
+
+/* hanya table yang boleh horizontal scroll */
+.adm-bg.adm-inventory .adm-table-wrap,
+.adm-bg.adm-inventory .table-wrap{
+  max-width: 100%;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* supaya tabel tidak memaksa parent melebar */
+.adm-bg.adm-inventory .adm-table,
+.adm-bg.adm-inventory .table{
+  width: 100%;
+  max-width: 100%;
+}
+
+/* chip/header bar sering bikin melebar karena nowrap */
+.adm-bg.adm-inventory .adm-panel-head,
+.adm-bg.adm-inventory .adm-head,
+.adm-bg.adm-inventory .adm-topbar{
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* filter row juga sering bikin melebar */
+.adm-bg.adm-inventory .row{
+  flex-wrap: wrap;
+}
+.adm-bg.adm-inventory .row .col{
+  min-width: 0;
+}
+
+/* =========================================================
+   FIX: Hanya tabel inventory yang overflow
+   -> card/panel tidak boleh melebar
+   -> table-wrap yang horizontal scroll
+   ========================================================= */
+.adm-bg.adm-inventory .card,
+.adm-bg.adm-inventory .adm-panel,
+.adm-bg.adm-inventory .adm-main-card {
+  max-width: 100%;
+}
+
+/* Card/panel tempat tabel: jangan biarkan isi mendorong keluar */
+.adm-bg.adm-inventory .adm-panel,
+.adm-bg.adm-inventory .card {
+  overflow: hidden;
+}
+
+/* Wrapper tabel HARUS jadi scroll container */
+.adm-bg.adm-inventory .adm-table-wrap,
+.adm-bg.adm-inventory .table-wrap {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+  overflow-x: auto !important;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tabel jangan memaksa parent melebar; kalau butuh, dia yang melebar & discroll */
+.adm-bg.adm-inventory table.table,
+.adm-bg.adm-inventory table.adm-table {
+  width: max(100%, 980px); /* bikin kolom kanan aman, scroll di wrapper */
+  max-width: none;
+  table-layout: auto;
+}
+
+/* Biar teks panjang (update terakhir) tidak bikin kolom makin lebar */
+.adm-bg.adm-inventory table.table td,
+.adm-bg.adm-inventory table.table th,
+.adm-bg.adm-inventory table.adm-table td,
+.adm-bg.adm-inventory table.adm-table th {
+  word-break: break-word;
+}
+
+/* =========================================================
+   FIX: kolom UNIT / SUMBER menumpuk (terlalu sempit)
+   -> kunci supaya kolom kecil "nowrap" + kasih min-width
+   ========================================================= */
+
+/* Jangan pecah kata di header table */
+.adm-bg.adm-inventory table.table th,
+.adm-bg.adm-inventory table.adm-table th{
+  white-space: nowrap !important;
+  word-break: normal !important;
+}
+
+/* Default td boleh wrap untuk kolom panjang, tapi kolom kecil jangan */
+.adm-bg.adm-inventory table.table td,
+.adm-bg.adm-inventory table.adm-table td{
+  word-break: normal !important;
+}
+
+/* Kolom UNIT (biasanya isi "PCS") */
+.adm-bg.adm-inventory table.table th:nth-child(2),
+.adm-bg.adm-inventory table.table td:nth-child(2),
+.adm-bg.adm-inventory table.adm-table th:nth-child(2),
+.adm-bg.adm-inventory table.adm-table td:nth-child(2){
+  width: 90px;
+  min-width: 90px;
+  text-align: center;
+  white-space: nowrap !important;
+}
+
+/* Kolom QTY */
+.adm-bg.adm-inventory table.table th:nth-child(3),
+.adm-bg.adm-inventory table.table td:nth-child(3),
+.adm-bg.adm-inventory table.adm-table th:nth-child(3),
+.adm-bg.adm-inventory table.adm-table td:nth-child(3){
+  width: 110px;
+  min-width: 110px;
+  text-align: right;
+  white-space: nowrap !important;
+}
+
+/* Kolom Δ */
+.adm-bg.adm-inventory table.table th:nth-child(4),
+.adm-bg.adm-inventory table.table td:nth-child(4),
+.adm-bg.adm-inventory table.adm-table th:nth-child(4),
+.adm-bg.adm-inventory table.adm-table td:nth-child(4){
+  width: 80px;
+  min-width: 80px;
+  text-align: right;
+  white-space: nowrap !important;
+}
+
+/* Kolom SUMBER (biasanya badge CENTRAL/CART) */
+.adm-bg.adm-inventory table.table th:nth-last-child(2),
+.adm-bg.adm-inventory table.table td:nth-last-child(2),
+.adm-bg.adm-inventory table.adm-table th:nth-last-child(2),
+.adm-bg.adm-inventory table.adm-table td:nth-last-child(2){
+  width: 80px;
+  min-width: 80px;
+  text-align: center;
+  white-space: nowrap !important;
+}
+
+/* Kolom AKSI (Set / ±Delta / Ledger) */
+.adm-bg.adm-inventory table.table th:last-child,
+.adm-bg.adm-inventory table.table td:last-child,
+.adm-bg.adm-inventory table.adm-table th:last-child,
+.adm-bg.adm-inventory table.adm-table td:last-child{
+  width: 60px;
+  min-width: 60px;
+  white-space: nowrap !important;
+}
+
+/* Badge/pill jangan di-break jadi huruf vertikal */
+.adm-bg.adm-inventory .pill,
+.adm-bg.adm-inventory .badge,
+.adm-bg.adm-inventory .adm-badge{
+  white-space: nowrap !important;
+  word-break: normal !important;
+}
+
+/* ===== Admin Inventory: jangan clip konten panel/card ===== */
+.adm-bg.adm-inventory .adm-panel,
+.adm-bg.adm-inventory .card{
+  overflow: visible !important;
+}
+
+/* tabel tetap aman: scroll hanya di wrapper */
+.adm-bg.adm-inventory .adm-table-wrap,
+.adm-bg.adm-inventory .table-wrap{
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  max-width: 100%;
+}
