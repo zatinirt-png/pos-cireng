@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import LoadingScreen from "../components/ui/LoadingScreen";
 import Tabs from "../components/ui/Tabs";
 import CashierStockPanel from "../components/pos/CashierStockPanel";
+import { socket, connectSocket, disconnectSocket } from "../socket";
 
 function rupiah(amount) {
   const n = Number(amount || 0);
@@ -105,7 +106,7 @@ export default function CashierPOS() {
   const [cart, setCart] = useState([]);
   const [promoIds, setPromoIds] = useState([]);
   const [discount, setDiscount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState("CASH");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [note, setNote] = useState("");
 
   // ===== QUEUE =====
@@ -124,9 +125,20 @@ export default function CashierPOS() {
     promoIds: [],
   });
 
+  // ===== ORDER EDIT + PAID (Modal) =====
+  const [editMode, setEditMode] = useState(false);
+  const [editItems, setEditItems] = useState([]);
+  const [editNote, setEditNote] = useState("");
+  const [paidBusy, setPaidBusy] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
+
   // ===== UI MSG/ERR =====
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+
+  
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const checkoutLockRef = useRef(false);
 
   // ===== BOOT LOADING =====
   const [booting, setBooting] = useState(true);
@@ -138,6 +150,13 @@ export default function CashierPOS() {
   // ===== CLOSE SHIFT MODAL =====
   const [closeShiftOpen, setCloseShiftOpen] = useState(false);
   const [closeShiftBusy, setCloseShiftBusy] = useState(false);
+
+  const qSigRef = useRef("");
+  const qReqRef = useRef(0);
+  const qDidFirstLoadRef = useRef(false);
+
+  const [saleBusy, setSaleBusy] = useState(false);
+  const saleLockRef = useRef(false);
 
   useEffect(() => {
     if (!token) nav("/cashier");
@@ -189,17 +208,37 @@ export default function CashierPOS() {
   }
 
   // ===== QUEUE LOAD =====
-  async function loadQueue() {
+  async function loadQueue({ silent = false } = {}) {
     if (!token) return;
+
+    const reqId = ++qReqRef.current;
+    if (!silent && !qDidFirstLoadRef.current) setQLoading(true);
     setQErr("");
-    setQLoading(true);
+
     try {
-      const r = await apiGet("/api/orders/queue", token);
-      setQueue(r.orders || []);
+      // ✅ ambil OPEN + PENDING_PAID (biar order paid tidak hilang)
+      const r = await apiGet("/api/orders/queue?status=ALL", token);
+
+      // ✅ cegah response lama menimpa data baru
+      if (reqId !== qReqRef.current) return;
+
+      const next = r.orders || [];
+      const sig = next
+        .map((o) => `${o.id}:${o.status}:${o.grossTotal}:${o.itemCount}`)
+        .join("|");
+
+      // ✅ kalau sama persis, jangan setState (biar UI nggak “kedip”)
+      if (sig !== qSigRef.current) {
+        qSigRef.current = sig;
+        setQueue(next);
+      }
+
+      qDidFirstLoadRef.current = true;
     } catch (e) {
+      if (reqId !== qReqRef.current) return;
       setQErr(e?.message || "Gagal load antrian");
     } finally {
-      setQLoading(false);
+      if (!silent && !qDidFirstLoadRef.current) setQLoading(false);
     }
   }
 
@@ -235,14 +274,38 @@ export default function CashierPOS() {
   // polling queue saat shift OPEN
   useEffect(() => {
     if (!token) return;
+
+    // connect socket sekali token ada
+    connectSocket(token);
+
+    return () => {
+      disconnectSocket();
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
     if (!shift) return;
 
-    loadQueue();
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") loadQueue();
-    }, 5000);
+    // initial
+    loadQueue({ silent: false });
 
-    return () => clearInterval(t);
+    // ✅ realtime invalidate → refresh cepat
+    const onInvalidate = (payload) => {
+      if (document.visibilityState !== "visible") return;
+      loadQueue({ silent: true });
+    };
+    socket.on("orders:invalidate", onInvalidate);
+
+    // ✅ fallback polling lebih jarang (ringan)
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") loadQueue({ silent: true });
+    }, 15000);
+
+    return () => {
+      clearInterval(t);
+      socket.off("orders:invalidate", onInvalidate);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, shift]);
 
@@ -305,12 +368,20 @@ export default function CashierPOS() {
   }
 
   function updateQty(key, delta) {
-    setCart((prev) =>
-      prev.map((x) =>
-        x.key === key ? { ...x, qty: Math.max(1, x.qty + delta) } : x
-      )
-    );
-  }
+  setCart((prev) => {
+    const curr = prev.find((x) => x.key === key);
+    if (!curr) return prev;
+
+    const nextQty = Number(curr.qty || 0) + Number(delta || 0);
+
+    // ✅ kalau qty <= 0, item langsung hilang (tanpa refresh)
+    if (!Number.isFinite(nextQty) || nextQty <= 0) {
+      return prev.filter((x) => x.key !== key);
+    }
+
+    return prev.map((x) => (x.key === key ? { ...x, qty: nextQty } : x));
+  });
+}
 
   function removeItem(key) {
     setCart((prev) => prev.filter((x) => x.key !== key));
@@ -460,6 +531,9 @@ export default function CashierPOS() {
   }
 
   async function submitSale() {
+    if (saleLockRef.current) return;
+    saleLockRef.current = true;
+    setSaleBusy(true);
     setErr("");
     setMsg("");
     try {
@@ -502,6 +576,9 @@ export default function CashierPOS() {
       await loadQueue();
     } catch (e) {
       setErr(e?.message || "Gagal simpan transaksi");
+    } finally {
+      setSaleBusy(false);
+      saleLockRef.current = false;
     }
   }
 
@@ -583,6 +660,75 @@ export default function CashierPOS() {
     return Math.max(0, gross - totalDisc);
   }, [openOrder, checkout.manualDiscount, checkoutPromoDiscount]);
 
+  // ===== ORDER EDIT HELPERS =====
+  const activeProducts = useMemo(() => {
+    const list = meta?.products || [];
+    return list.filter((p) => p && p.isActive !== false);
+  }, [meta]);
+
+  const productMap = useMemo(() => {
+    const list = meta?.products || [];
+    return new Map(list.map((p) => [p.id, p]));
+  }, [meta]);
+
+  function buildEditItemsFromOrder(order) {
+    const items = order?.items || [];
+    return items.map((it, idx) => ({
+      rowId: it.id || `${it.productId || it.product?.id}:${it.portion}:${idx}`,
+      productId: it.productId || it.product?.id,
+      portion: it.portion === "LARGE" ? "LARGE" : "SMALL",
+      qty: Number(it.qty || 1),
+      itemNote: it.itemNote || "",
+    }));
+  }
+
+  function editUnitPrice(row) {
+    const p = productMap.get(row.productId);
+    if (!p) return 0;
+    return row.portion === "LARGE"
+      ? Number(p.priceLarge || 0)
+      : Number(p.priceSmall || 0);
+  }
+
+  const editGrossPreview = useMemo(() => {
+    return (editItems || []).reduce((sum, row) => {
+      const qty = Number(row.qty || 0);
+      if (!Number.isFinite(qty) || qty <= 0) return sum;
+      return sum + editUnitPrice(row) * qty;
+    }, 0);
+  }, [editItems, productMap]);
+
+  function patchEditRow(rowId, patch) {
+    setEditItems((prev) =>
+      prev.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r))
+    );
+  }
+
+  function removeEditRow(rowId) {
+    setEditItems((prev) => prev.filter((r) => r.rowId !== rowId));
+  }
+
+  function addEditRow() {
+    const first = activeProducts[0];
+    if (!first) return;
+    setEditItems((prev) => [
+      ...prev,
+      {
+        rowId: `new:${Date.now()}:${Math.random().toString(16).slice(2)}`,
+        productId: first.id,
+        portion: "SMALL",
+        qty: 1,
+        itemNote: "",
+      },
+    ]);
+  }
+
+  function resetEditStateFromOpenOrder() {
+    if (!openOrder) return;
+    setEditItems(buildEditItemsFromOrder(openOrder));
+    setEditNote(openOrder?.note || "");
+  }
+
   async function openOrderModal(orderId) {
     setErr("");
     setMsg("");
@@ -595,6 +741,11 @@ export default function CashierPOS() {
         note: r.order?.note || "",
         promoIds: [],
       });
+      setEditMode(false);
+      setEditItems(buildEditItemsFromOrder(r.order));
+      setEditNote(r.order?.note || "");
+      setPaidBusy(false);
+      setEditBusy(false);
       setModalOpen(true);
     } catch (e) {
       setErr(e?.message || "Gagal buka order");
@@ -617,11 +768,85 @@ export default function CashierPOS() {
     }
   }
 
+  async function setOrderPaid(orderId, paid) {
+  if (!token) return;
+  setErr("");
+  setMsg("");
+  setPaidBusy(true);
+  try {
+    const r = await apiPost(`/api/orders/${orderId}/paid`, { paid: !!paid }, token);
+
+    setOpenOrder((prev) =>
+      prev && prev.id === orderId
+        ? { ...prev, status: r.order?.status || prev.status }
+        : prev
+    );
+
+    setMsg(paid ? "Status: sudah bayar." : "Status: belum bayar.");
+    await loadQueue();
+  } catch (e) {
+    setErr(e?.message || "Gagal update status bayar");
+  } finally {
+    setPaidBusy(false);
+  }
+}
+
+async function saveOrderEdits(orderId) {
+  if (!token) return;
+  setErr("");
+  setMsg("");
+  setEditBusy(true);
+  try {
+    const items = (editItems || []).map((r) => ({
+      productId: r.productId,
+      portion: r.portion === "LARGE" ? "LARGE" : "SMALL",
+      qty: Number(r.qty || 0),
+      itemNote: r.itemNote || "",
+    }));
+
+    if (!items.length) throw new Error("Minimal 1 item.");
+    for (const it of items) {
+      if (!it.productId) throw new Error("Produk wajib dipilih.");
+      if (!Number.isFinite(it.qty) || it.qty <= 0) throw new Error("Qty harus > 0.");
+    }
+
+    const r = await apiPost(
+      `/api/orders/${orderId}/update`,
+      { items, note: editNote || "" },
+      token
+    );
+
+    setOpenOrder(r.order);
+
+    setCheckout((p) => ({
+      ...p,
+      manualDiscount: 0,
+      promoIds: [],
+      note: r.order?.note || "",
+    }));
+
+    setEditMode(false);
+    setMsg("Order berhasil diupdate. Silakan centang 'Sudah bayar' untuk checkout.");
+    await loadQueue();
+  } catch (e) {
+    setErr(e?.message || "Gagal update order");
+  } finally {
+    setEditBusy(false);
+  }
+}
+
   async function checkoutOrder(orderId) {
+    if (checkoutLockRef.current || checkoutBusy) return;
+    checkoutLockRef.current = true;
+    setCheckoutBusy(true);
     setErr("");
     setMsg("");
     try {
       if (!shift) throw new Error("Shift belum OPEN.");
+      // ✅ client-side guard (backend juga enforce)
+      if (openOrder?.id === orderId && openOrder.status !== "PENDING_PAID") {
+        throw new Error("Centang 'Sudah bayar' dulu sebelum checkout.");
+      }
 
       const payload = {
         manualDiscount: Number(checkout.manualDiscount || 0),
@@ -629,6 +854,10 @@ export default function CashierPOS() {
         note: checkout.note || null,
         promoIds: checkout.promoIds || [],
       };
+
+      if (checkout.paymentMethod !== "CASH" && checkout.paymentMethod !== "QRIS") {
+        throw new Error("Pilih metode bayar dulu (CASH / QRIS).");
+      }
 
       const res = await apiPost(`/api/orders/${orderId}/checkout`, payload, token);
 
@@ -653,6 +882,9 @@ export default function CashierPOS() {
       await loadQueue();
     } catch (e) {
       setErr(e?.message || "Gagal checkout order");
+    } finally {
+      setCheckoutBusy(false);
+      checkoutLockRef.current = false;
     }
   }
 
@@ -660,6 +892,7 @@ export default function CashierPOS() {
     localStorage.removeItem("cashier_token");
     localStorage.removeItem("cashier_cartId");
     localStorage.removeItem("cashier_cartName");
+    disconnectSocket();
     nav("/cashier");
   }
 
@@ -805,6 +1038,7 @@ export default function CashierPOS() {
   }
 
   const syncText = metaSyncAt ? metaSyncAt.toLocaleTimeString("id-ID") : "-";
+  const orderIsPaid = openOrder?.status === "PENDING_PAID";
 
   return (
     <div className="pos-bg">
@@ -867,7 +1101,7 @@ export default function CashierPOS() {
           </div>
 
           {/* GRID */}
-          <div className="pos-grid">
+          <div className="pos-grid pos-grid--cashier">
             {/* LEFT */}
             <div className="pos-col">
               <div className="pos-card">
@@ -1280,7 +1514,7 @@ export default function CashierPOS() {
                         <div className="pos-section">
                           <div className="pos-section-head">
                             <h3 className="pos-h3">Tambah ke Antrian</h3>
-                            <span className="muted">Belum dibayar</span>
+                            <span className="muted">Klik pesanan untuk buka detail. Centang "Sudah bayar" dulu sebelum checkout.</span>
                           </div>
 
                           <div className="pos-form">
@@ -1311,43 +1545,11 @@ export default function CashierPOS() {
 
                         {/* CHECKOUT DIRECT */}
                         <div className="pos-section">
-                          <div className="pos-section-head">
-                            <h3 className="pos-h3">Selesaikan Langsung</h3>
-                            <span className="muted">Bayar sekarang</span>
-                          </div>
+                      
 
-                          <div className="row">
-                            <div className="col">
-                              <label>Diskon (Rp)</label>
-                              <input
-                                className="input"
-                                type="number"
-                                value={discount}
-                                onChange={(e) => setDiscount(e.target.value)}
-                              />
-                            </div>
-                            <div className="col">
-                              <label>Metode Bayar</label>
-                              <select
-                                className="input"
-                                value={paymentMethod}
-                                onChange={(e) => setPaymentMethod(e.target.value)}
-                              >
-                                <option value="CASH">CASH</option>
-                                <option value="QRIS">QRIS</option>
-                              </select>
-                            </div>
-                          </div>
+                          
 
-                          <div style={{ marginTop: 12 }}>
-                            <label>Catatan transaksi / antrian (opsional)</label>
-                            <textarea
-                              className="input"
-                              rows="2"
-                              value={note}
-                              onChange={(e) => setNote(e.target.value)}
-                            />
-                          </div>
+                          
 
                           <div className="pos-totalbar">
                             <div>
@@ -1355,14 +1557,7 @@ export default function CashierPOS() {
                               <div className="pos-total">{rupiah(netTotal)}</div>
                             </div>
 
-                            <button
-                              className="btn pos-cta"
-                              type="button"
-                              onClick={submitSale}
-                              disabled={cart.length === 0}
-                            >
-                              Selesaikan
-                            </button>
+                            
                           </div>
                         </div>
                       </>
@@ -1574,7 +1769,8 @@ export default function CashierPOS() {
             </div>
 
             {/* RIGHT */}
-            <div className="pos-col">
+            {/* RIGHT */}
+            <div className="pos-col pos-col--queue">
               <div className="pos-card">
                 <div className="pos-section-head pos-section-head--tight">
                   <h3 className="pos-h3" style={{ margin: 0 }}>Antrian Pesanan</h3>
@@ -1582,8 +1778,8 @@ export default function CashierPOS() {
                   <div className="pos-right-tools" aria-live="polite">
                     {qLoading ? (
                       <span className="loading-inline loading--neutral">
-                        <span className="spinner spinner--sm" aria-hidden="true" />
-                        <span className="loading-inline-text">Sync…</span>
+                        
+                        
                       </span>
                     ) : (
                       <span className="muted" style={{ fontSize: 12 }}></span>
@@ -1604,7 +1800,7 @@ export default function CashierPOS() {
                 {!queue.length ? (
                   <div className="muted">Belum ada antrian.</div>
                 ) : (
-                  <div className="queue-list">
+                  <div className="queue-list queue-list--hscroll">
                     {queue.map((o) => (
                       <button
                         key={o.id}
@@ -1621,7 +1817,13 @@ export default function CashierPOS() {
                           </div>
 
                           <div className="queue-right">
-                            <div className="queue-sub">Estimasi</div>
+                            <div className="queue-sub" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                              {o.status === "PENDING_PAID" ? (
+                                <span className="pill pill--ok">Sudah bayar</span>
+                              ) : (
+                                <span className="pill pill--neutral">Belum bayar</span>
+                              )}
+                            </div>
                             <div className="queue-total">{rupiah(o.grossTotal || 0)}</div>
                           </div>
                         </div>
@@ -1744,6 +1946,7 @@ export default function CashierPOS() {
             </div>
           ) : null}
 
+          
           {/* MODAL CHECKOUT ORDER */}
           {modalOpen && openOrder ? (
             <div
@@ -1751,6 +1954,11 @@ export default function CashierPOS() {
               onClick={() => {
                 setModalOpen(false);
                 setOpenOrder(null);
+                setEditMode(false);
+                setEditItems([]);
+                setEditNote("");
+                setPaidBusy(false);
+                setEditBusy(false);
               }}
             >
               <div className="modal-card pos-card" onClick={(e) => e.stopPropagation()}>
@@ -1761,160 +1969,324 @@ export default function CashierPOS() {
                       Dibuat: {new Date(openOrder.createdAt).toLocaleString("id-ID")}
                     </div>
                   </div>
-                  <button
-                    className="btn secondary"
-                    type="button"
-                    onClick={() => {
-                      setModalOpen(false);
-                      setOpenOrder(null);
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
                     }}
                   >
-                    Tutup
-                  </button>
+                    <label
+                      className="pill pill--soft"
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                        cursor: editMode ? "not-allowed" : "pointer",
+                        opacity: editMode ? 0.65 : 1,
+                      }}
+                      title={editMode ? "Simpan/batalkan edit dulu" : "Centang jika customer sudah bayar"}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!orderIsPaid}
+                        disabled={paidBusy || editMode}
+                        onChange={(e) => setOrderPaid(openOrder.id, e.target.checked)}
+                        style={{ transform: "translateY(1px)" }}
+                      />
+                      <span>
+                        <b>Sudah bayar</b>
+                      </span>
+                    </label>
+
+                    {orderIsPaid ? (
+                      <span className="pill pill--ok">PAID</span>
+                    ) : (
+                      <span className="pill pill--neutral">UNPAID</span>
+                    )}
+
+                    <button
+                      className="btn secondary"
+                      type="button"
+                      onClick={() => {
+                        setModalOpen(false);
+                        setOpenOrder(null);
+                        setEditMode(false);
+                        setEditItems([]);
+                        setEditNote("");
+                        setPaidBusy(false);
+                        setEditBusy(false);
+                      }}
+                    >
+                      Tutup
+                    </button>
+                  </div>
                 </div>
 
                 <div className="hr" />
 
-                <h4 style={{ marginTop: 0 }}>Detail Item</h4>
-                <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Produk</th>
-                        <th style={{ width: 90 }}>Portion</th>
-                        <th style={{ width: 90 }}>Qty</th>
-                        <th style={{ width: 140 }}>Subtotal</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(openOrder.items || []).map((it) => (
-                        <tr key={it.id}>
-                          <td>
-                            <b>{it.product?.name || "(Produk)"}</b>
-                            {it.itemNote ? (
-                              <div className="muted" style={{ fontSize: 12 }}>
-                                {it.itemNote}
-                              </div>
-                            ) : null}
-                          </td>
-                          <td>
-                            <span className="badge badge--neutral">{it.portion}</span>
-                          </td>
-                          <td>{it.qty}</td>
-                          <td>
-                            <b>{rupiah(Number(it.price || 0) * Number(it.qty || 0))}</b>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {editMode ? (
+                  <>
+                    <h4 style={{ marginTop: 0 }}>Edit Item</h4>
 
-                <div className="hr" />
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Produk</th>
+                            <th style={{ width: 110 }}>Portion</th>
+                            <th style={{ width: 160 }}>Qty</th>
+                            <th style={{ width: 140 }}>Subtotal</th>
+                            <th style={{ width: 90 }}></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(editItems || []).map((row) => {
+                            const unit = editUnitPrice(row);
+                            const qty = Number(row.qty || 0);
+                            const sub = Math.max(0, (Number.isFinite(qty) ? qty : 0) * unit);
 
-                <h4 style={{ marginTop: 0 }}>Promo (opsional)</h4>
-                <div className="grid-products">
-                  {(meta?.promos || []).map((p) => {
-                    const active = checkout.promoIds.includes(p.id);
-                    return (
-                      <div
-                        key={p.id}
-                        className={`prod ${p.isActive === false ? "prod--disabled" : ""}`}
-                      >
-                        <div className="prod-head">
-                          <b className="prod-title">{p.name}</b>
-                          {active ? (
-                            <span className="pill pill--ok">Dipakai</span>
-                          ) : (
-                            <span className="pill pill--neutral">Opsional</span>
-                          )}
+                            return (
+                              <tr key={row.rowId}>
+                                <td>
+                                  <select
+                                    className="input"
+                                    value={row.productId || ""}
+                                    onChange={(e) => patchEditRow(row.rowId, { productId: e.target.value })}
+                                  >
+                                    {activeProducts.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name}
+                                      </option>
+                                    ))}
+                                  </select>
+
+                                  <input
+                                    className="input"
+                                    style={{ marginTop: 8 }}
+                                    placeholder="Catatan item (opsional)"
+                                    value={row.itemNote || ""}
+                                    onChange={(e) => patchEditRow(row.rowId, { itemNote: e.target.value })}
+                                  />
+                                </td>
+
+                                <td>
+                                  <select
+                                    className="input"
+                                    value={row.portion === "LARGE" ? "LARGE" : "SMALL"}
+                                    onChange={(e) => patchEditRow(row.rowId, { portion: e.target.value })}
+                                  >
+                                    <option value="SMALL">SMALL</option>
+                                    <option value="LARGE">LARGE</option>
+                                  </select>
+                                </td>
+
+                                <td>
+                                  <div className="qty-ctrl">
+                                    <button
+                                      className="btn secondary btn--sm"
+                                      type="button"
+                                      onClick={() =>
+                                        patchEditRow(row.rowId, {
+                                          qty: Math.max(1, Number(row.qty || 1) - 1),
+                                        })
+                                      }
+                                    >
+                                      -
+                                    </button>
+                                    <input
+                                      className="input"
+                                      type="number"
+                                      value={row.qty}
+                                      onChange={(e) =>
+                                        patchEditRow(row.rowId, {
+                                          qty: Math.max(1, Number(e.target.value || 1)),
+                                        })
+                                      }
+                                      style={{ width: 70, textAlign: "center" }}
+                                    />
+                                    <button
+                                      className="btn secondary btn--sm"
+                                      type="button"
+                                      onClick={() =>
+                                        patchEditRow(row.rowId, { qty: Number(row.qty || 1) + 1 })
+                                      }
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </td>
+
+                                <td>
+                                  <b>{rupiah(sub)}</b>
+                                </td>
+
+                                <td style={{ textAlign: "right" }}>
+                                  <button
+                                    className="btn danger btn--sm"
+                                    type="button"
+                                    onClick={() => removeEditRow(row.rowId)}
+                                  >
+                                    Hapus
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="pos-actions" style={{ marginTop: 10 }}>
+                      <button className="btn secondary btn--sm" type="button" onClick={addEditRow}>
+                        + Tambah Item
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 12 }}>
+                      <label>Catatan Order (opsional)</label>
+                      <textarea
+                        className="input"
+                        rows="2"
+                        value={editNote}
+                        onChange={(e) => setEditNote(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="hr" />
+
+                    <div className="modal-foot">
+                      <div className="modal-totals">
+                        <div className="muted">Gross Baru (preview)</div>
+                        <div className="modal-net">
+                          <b>{rupiah(editGrossPreview)}</b>
                         </div>
-                        <small className="muted">
-                          {p.type === "DISCOUNT_PERCENT"
-                            ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(p.minSubtotal || 0)})`
-                            : `Bonus x${p.bonusQty || 0} (Min ${rupiah(p.minSubtotal || 0)})`}
-                        </small>
-                        <div className="prod-actions">
-                          <button
-                            className={active ? "btn" : "btn secondary"}
-                            type="button"
-                            onClick={() => toggleCheckoutPromo(p.id)}
-                          >
-                            {active ? "Dipakai" : "Pakai"}
-                          </button>
+                        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+                          Setelah disimpan, status bayar akan kembali <b>UNPAID</b>.
                         </div>
                       </div>
-                    );
-                  })}
-                  {(!meta?.promos || meta.promos.length === 0) && (
-                    <div className="muted">Belum ada promo aktif.</div>
-                  )}
-                </div>
 
-                <div className="hr" />
+                      <div className="modal-actions">
+                        <button
+                          className="btn danger"
+                          type="button"
+                          onClick={() => cancelOrder(openOrder.id)}
+                          disabled={editBusy || paidBusy}
+                        >
+                          Batalkan Order
+                        </button>
 
-                <div className="row">
-                  <div className="col">
-                    <label>Diskon Manual (Rp)</label>
-                    <input
-                      className="input"
-                      type="number"
-                      value={checkout.manualDiscount}
-                      onChange={(e) =>
-                        setCheckout((p) => ({ ...p, manualDiscount: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="col">
-                    <label>Metode Bayar</label>
-                    <select
-                      className="input"
-                      value={checkout.paymentMethod}
-                      onChange={(e) =>
-                        setCheckout((p) => ({ ...p, paymentMethod: e.target.value }))
-                      }
-                    >
-                      <option value="CASH">CASH</option>
-                      <option value="QRIS">QRIS</option>
-                    </select>
-                  </div>
-                </div>
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={() => {
+                            setEditMode(false);
+                            resetEditStateFromOpenOrder();
+                          }}
+                          disabled={editBusy}
+                        >
+                          Batal Edit
+                        </button>
 
-                <div style={{ marginTop: 12 }}>
-                  <label>Catatan (opsional)</label>
-                  <textarea
-                    className="input"
-                    rows="2"
-                    value={checkout.note}
-                    onChange={(e) =>
-                      setCheckout((p) => ({ ...p, note: e.target.value }))
-                    }
-                  />
-                </div>
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => saveOrderEdits(openOrder.id)}
+                          disabled={editBusy || !activeProducts.length || (editItems || []).length === 0}
+                        >
+                          {editBusy ? "Menyimpan…" : "Simpan Perubahan"}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h4 style={{ marginTop: 0 }}>Detail Item</h4>
 
-                <div className="hr" />
+                    <div className="table-wrap">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>Produk</th>
+                            <th style={{ width: 90 }}>Portion</th>
+                            <th style={{ width: 90 }}>Qty</th>
+                            <th style={{ width: 140 }}>Subtotal</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(openOrder.items || []).map((it) => (
+                            <tr key={it.id}>
+                              <td>
+                                <b>{it.product?.name || "(Produk)"}</b>
+                                {it.itemNote ? (
+                                  <div className="muted" style={{ fontSize: 12 }}>
+                                    {it.itemNote}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td>
+                                <span className="badge badge--neutral">{it.portion}</span>
+                              </td>
+                              <td>{it.qty}</td>
+                              <td>
+                                <b>{rupiah(Number(it.price || 0) * Number(it.qty || 0))}</b>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
-                <div className="modal-foot">
-                  <div className="modal-totals">
-                    <div className="muted">Gross</div>
-                    <div><b>{rupiah(openOrder.grossTotal || 0)}</b></div>
+                    <div className="hr" />
 
-                    <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
-                    <div><b>{rupiah(checkoutPromoDiscount)}</b></div>
+                    {!orderIsPaid ? (
+                      <div className="toast toast--danger" style={{ marginBottom: 12 }}>
+                        Centang <b>Sudah bayar</b> dulu supaya bisa checkout.
+                      </div>
+                    ) : null}
 
-                    <div className="muted" style={{ marginTop: 6 }}>Net</div>
-                    <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
-                  </div>
+                    <div className="modal-foot">
+                      <div className="modal-totals">
+                        <div className="muted">Gross</div>
+                        <div><b>{rupiah(openOrder.grossTotal || 0)}</b></div>
+                        <div className="muted" style={{ marginTop: 6 }}>Net</div>
+                        <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
+                      </div>
 
-                  <div className="modal-actions">
-                    <button className="btn danger" type="button" onClick={() => cancelOrder(openOrder.id)}>
-                      Batalkan Order
-                    </button>
-                    <button className="btn" type="button" onClick={() => checkoutOrder(openOrder.id)}>
-                      Selesaikan & Bayar
-                    </button>
-                  </div>
-                </div>
+                      <div className="modal-actions">
+                        <button className="btn danger" type="button" onClick={() => cancelOrder(openOrder.id)}>
+                          Batalkan Order
+                        </button>
+
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={() => {
+                            resetEditStateFromOpenOrder();
+                            setEditMode(true);
+                          }}
+                          disabled={!activeProducts.length}
+                        >
+                          Edit Order
+                        </button>
+
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => checkoutOrder(openOrder.id)}
+                          disabled={checkoutBusy || !orderIsPaid || !checkout.paymentMethod}
+                          
+                        >
+                          
+                          {checkoutBusy ? "Memproses…" : "Selesaikan & Checkout"}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           ) : null}

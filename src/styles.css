@@ -3423,3 +3423,53 @@ body{
    ========================= */
 .muted{ color: var(--pos-muted) !important; opacity: 1 !important; }
 
+/* ================================
+   Cashier Layout: Queue top + horizontal scroll
+   (Only affects CashierPOS via modifier classes)
+================================ */
+
+/* Stack layout: queue on top, cashier full width */
+.pos-grid--cashier {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pos-grid--cashier .pos-col {
+  width: 100%;
+}
+
+/* Move queue block to the top without changing JSX logic */
+.pos-grid--cashier .pos-col--queue {
+  order: -1;
+}
+
+/* Horizontal queue list */
+.queue-list--hscroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 6px 6px 12px;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+/* Each queue item becomes a card in a row */
+.queue-list--hscroll .queue-item {
+  flex: 0 0 280px;
+  max-width: 280px;
+  scroll-snap-align: start;
+}
+
+/* Keep inner layout tidy in a smaller card */
+.queue-list--hscroll .queue-row {
+  align-items: flex-start;
+}
+
+/* Optional: make scrollbar nicer (safe) */
+.queue-list--hscroll::-webkit-scrollbar {
+  height: 10px;
+}
+.queue-list--hscroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+}
