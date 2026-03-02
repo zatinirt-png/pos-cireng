@@ -245,7 +245,7 @@ export default function SideNav({ open: openProp, setOpen: setOpenProp }) {
             )}
           </div>
 
-          <div className="sidenav-meta">POS Cireng • v0.1</div>
+          <div className="sidenav-meta">POS Cireng • v0.2</div>
         </div>
 
       </aside>
