@@ -2248,6 +2248,26 @@ async function saveOrderEdits(orderId) {
                       </div>
                     ) : null}
 
+                    {/* ✅ Payment Method Dropdown (Checkout Order Modal) */}
+                    <div className="pos-form" style={{ marginBottom: 12 }}>
+                      <div className="row">
+                        <div className="col">
+                          <label>Metode Pembayaran</label>
+                          <select
+                            className="input"
+                            value={checkout.paymentMethod}
+                            onChange={(e) =>
+                              setCheckout((p) => ({ ...p, paymentMethod: e.target.value }))
+                            }
+                            disabled={checkoutBusy || !orderIsPaid}
+                          >
+                            <option value="CASH">CASH</option>
+                            <option value="QRIS">QRIS</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="modal-foot">
                       <div className="modal-totals">
                         <div className="muted">Gross</div>
