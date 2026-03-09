@@ -4,6 +4,30 @@ import { socket, connectSocket, disconnectSocket } from "../socket";
 import { useNavigate } from "react-router-dom";
 import { formatDateWIB } from "../lib/datetime";
 
+function ymdWib(d = new Date()) {
+  const offsetMs = 7 * 60 * 60 * 1000;
+  const w = new Date(d.getTime() + offsetMs);
+  const y = w.getUTCFullYear();
+  const m = String(w.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(w.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function formatRangeLabel(startDate, endDate) {
+  if (!startDate && !endDate) return "-";
+  const start = startDate ? formatDateWIB(`${startDate}T00:00:00+07:00`) : "-";
+  const end = endDate ? formatDateWIB(`${endDate}T00:00:00+07:00`) : "-";
+  return `${start} s/d ${end}`;
+}
+
+function buildRangeQuery(startDate, endDate) {
+  const qs = new URLSearchParams();
+  if (startDate) qs.set("startDate", startDate);
+  if (endDate) qs.set("endDate", endDate);
+  const raw = qs.toString();
+  return raw ? `?${raw}` : "";
+}
+
 function rupiah(amount) {
   const n = Number(amount || 0);
   if (!Number.isFinite(n)) return "Rp 0,00";
@@ -16,8 +40,6 @@ function rupiah(amount) {
 }
 
 function normalizeCartReportToTodayShape(cartReport, fallbackCartId) {
-  // cartReport shape (backend):
-  // { period, date, cart:{id,name}, totals:{cash,qris,total,transactions}, sales:[...], topProducts:[...] }
   const cartId = cartReport?.cart?.id || fallbackCartId || "";
   const cartName = cartReport?.cart?.name || "(Gerobak)";
 
@@ -37,7 +59,10 @@ function normalizeCartReportToTodayShape(cartReport, fallbackCartId) {
   }));
 
   return {
-    date: cartReport?.range?.start || cartReport?.date || new Date().toISOString(),
+    date: cartReport?.date || "",
+    startDate: cartReport?.startDate || "",
+    endDate: cartReport?.endDate || "",
+    range: cartReport?.range || null,
     totalAll: { cash, qris, total },
     perCart: [{ cartId, cartName, cash, qris, total }],
     topProducts: Array.isArray(cartReport?.topProducts) ? cartReport.topProducts : [],
@@ -48,12 +73,17 @@ function normalizeCartReportToTodayShape(cartReport, fallbackCartId) {
 export default function Dashboard() {
   const nav = useNavigate();
   const token = localStorage.getItem("admin_token");
+  const today = ymdWib();
 
   const [report, setReport] = useState(null);
   const [carts, setCarts] = useState([]);
-  const [cartFilter, setCartFilter] = useState("ALL"); // "ALL" | cartId
+  const [cartFilter, setCartFilter] = useState("ALL");
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
 
   const cartFilterRef = useRef("ALL");
+  const startDateRef = useRef(today);
+  const endDateRef = useRef(today);
   const didBootRef = useRef(false);
 
   const [err, setErr] = useState("");
@@ -63,6 +93,18 @@ export default function Dashboard() {
   useEffect(() => {
     cartFilterRef.current = cartFilter;
   }, [cartFilter]);
+
+  useEffect(() => {
+    cartFilterRef.current = cartFilter;
+  }, [cartFilter]);
+
+  useEffect(() => {
+    startDateRef.current = startDate;
+  }, [startDate]);
+
+  useEffect(() => {
+    endDateRef.current = endDate;
+  }, [endDate]);
 
   async function loadCarts({ silent = true } = {}) {
     try {
@@ -76,20 +118,35 @@ export default function Dashboard() {
     }
   }
 
-  async function load({ cartId, silent = false } = {}) {
+  async function load({ cartId, fromDate, toDate, silent = false } = {}) {
     const cid = cartId ?? cartFilterRef.current ?? "ALL";
+    const sd = fromDate ?? startDateRef.current ?? today;
+    const ed = toDate ?? endDateRef.current ?? today;
+
+    if (!sd || !ed) {
+      setErr("Tanggal awal dan tanggal akhir wajib diisi.");
+      return;
+    }
+
+    if (sd > ed) {
+      setErr("Tanggal awal tidak boleh lebih besar dari tanggal akhir.");
+      return;
+    }
 
     if (!silent) setLoading(true);
     setErr("");
 
     try {
+      const qs = buildRangeQuery(sd, ed);
+
       if (cid === "ALL") {
-        const r = await apiGet("/api/reports/today", token);
+        const r = await apiGet(`/api/reports/today${qs}`, token);
         setReport(r);
       } else {
-        const r = await apiGet(`/api/reports/cart/${cid}`, token);
+        const r = await apiGet(`/api/reports/cart/${cid}${qs}`, token);
         setReport(normalizeCartReportToTodayShape(r, cid));
       }
+
       setUpdatedAt(new Date());
     } catch (e) {
       setErr(e?.message || "Gagal load report");
@@ -104,21 +161,17 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!token) return;
-    if (didBootRef.current) return; // cegah double init (StrictMode dev)
+    if (didBootRef.current) return;
     didBootRef.current = true;
 
-    // 1) initial carts + report load
     loadCarts({ silent: true });
-    load({ silent: false });
+    load({ silent: false, fromDate: today, toDate: today });
 
-    // 2) connect socket (autoConnect: false)
     connectSocket(token);
 
-    // 3) listen invalidate dari server → silent refresh (biar ringan)
     const onInvalidate = () => load({ silent: true });
     socket.on("reports:invalidate", onInvalidate);
 
-    // 4) fallback polling
     const t = setInterval(() => load({ silent: true }), 15000);
 
     return () => {
@@ -128,6 +181,12 @@ export default function Dashboard() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !didBootRef.current) return;
+    load({ silent: false, fromDate: startDate, toDate: endDate });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate]);
 
   function logout() {
     localStorage.removeItem("admin_token");
@@ -178,6 +237,24 @@ export default function Dashboard() {
     setCartFilter(v);
     cartFilterRef.current = v;
     await load({ cartId: v, silent: false });
+  }
+
+  const activeRangeLabel = formatRangeLabel(
+    report?.startDate || startDate,
+    report?.endDate || endDate
+  );
+
+  async function handleCartChange(e) {
+    const v = e.target.value;
+    setCartFilter(v);
+    cartFilterRef.current = v;
+    await load({ cartId: v, fromDate: startDate, toDate: endDate, silent: false });
+  }
+
+  function handleTodayRange() {
+    const now = ymdWib();
+    setStartDate(now);
+    setEndDate(now);
   }
 
   return (
@@ -233,7 +310,7 @@ export default function Dashboard() {
                 <div>
                   <h2 className="adm-h2">Live Report</h2>
                   <div className="adm-subline">
-                    <span className="muted">Tanggal: {formatDateWIB(report?.date) || "-"}</span>
+                    <span className="muted">Rentang: {activeRangeLabel}</span>
                     <span className="adm-dot">•</span>
                     <span className="muted">Update: {updatedText}</span>
                     <span className="adm-dot">•</span>
@@ -249,8 +326,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <div className="adm-actions">
-                  {/* FILTER GEROBak */}
+                <div className="adm-actions" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
                   <div style={{ minWidth: 220, maxWidth: 320 }}>
                     <label style={{ marginBottom: 6 }}>Pilih Gerobak</label>
                     <select
@@ -269,11 +345,37 @@ export default function Dashboard() {
                     </select>
                   </div>
 
+                  <div style={{ minWidth: 170 }}>
+                    <label style={{ marginBottom: 6 }}>Dari Tanggal</label>
+                    <input
+                      className="input"
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      disabled={loading}
+                      style={{ borderRadius: 16 }}
+                    />
+                  </div>
+
+                  <div style={{ minWidth: 170 }}>
+                    <label style={{ marginBottom: 6 }}>Sampai Tanggal</label>
+                    <input
+                      className="input"
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      disabled={loading}
+                      style={{ borderRadius: 16 }}
+                    />
+                  </div>
+
+                  <button className="btn secondary" type="button" onClick={handleTodayRange} disabled={loading}>
+                    Hari Ini
+                  </button>
+
                   <button className="btn secondary" type="button" onClick={() => load({ silent: false })} disabled={loading}>
                     Refresh
                   </button>
-                  
-                  
                 </div>
               </div>
 

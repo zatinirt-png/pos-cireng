@@ -3,13 +3,39 @@ import { useNavigate } from "react-router-dom";
 import { apiGet } from "../api";
 
 function ymdWib(d = new Date()) {
-  // bikin YYYY-MM-DD WIB stabil
   const offsetMs = 7 * 60 * 60 * 1000;
   const w = new Date(d.getTime() + offsetMs);
   const y = w.getUTCFullYear();
   const m = String(w.getUTCMonth() + 1).padStart(2, "0");
   const day = String(w.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function formatDateWib(dateStr) {
+  if (!dateStr) return "-";
+  try {
+    return new Date(`${dateStr}T00:00:00+07:00`).toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Jakarta",
+    });
+  } catch {
+    return String(dateStr);
+  }
+}
+
+function formatRangeLabel(startDate, endDate) {
+  if (!startDate && !endDate) return "-";
+  return `${formatDateWib(startDate)} s/d ${formatDateWib(endDate)}`;
+}
+
+function buildRangeQuery(startDate, endDate) {
+  const qs = new URLSearchParams();
+  if (startDate) qs.set("startDate", startDate);
+  if (endDate) qs.set("endDate", endDate);
+  const raw = qs.toString();
+  return raw ? `?${raw}` : "";
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
@@ -49,10 +75,12 @@ export default function AdminReports() {
   const token =
     localStorage.getItem("admin_token") || localStorage.getItem("auth_token");
 
+  const today = ymdWib();
+
   const [carts, setCarts] = useState([]);
-  const [period, setPeriod] = useState("day"); // day | week
-  const [date, setDate] = useState(ymdWib());
   const [activeCartId, setActiveCartId] = useState("");
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
   const [report, setReport] = useState(null);
 
   const [loadingCarts, setLoadingCarts] = useState(false);
@@ -64,6 +92,16 @@ export default function AdminReports() {
   useEffect(() => {
     if (!token) nav("/admin");
   }, [token, nav]);
+
+  function validateRange(sd = startDate, ed = endDate) {
+    if (!sd || !ed) {
+      return "Tanggal awal dan tanggal akhir wajib diisi.";
+    }
+    if (sd > ed) {
+      return "Tanggal awal tidak boleh lebih besar dari tanggal akhir.";
+    }
+    return "";
+  }
 
   async function loadCarts() {
     setErr("");
@@ -81,15 +119,21 @@ export default function AdminReports() {
     }
   }
 
-  async function loadReport(cartId = activeCartId) {
+  async function loadReport(cartId = activeCartId, sd = startDate, ed = endDate) {
     if (!cartId) return;
+
+    const rangeErr = validateRange(sd, ed);
+    if (rangeErr) {
+      setErr(rangeErr);
+      setReport(null);
+      return;
+    }
+
     setErr("");
     setMsg("");
     setLoadingReport(true);
     try {
-      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(
-        date
-      )}`;
+      const qs = buildRangeQuery(sd, ed);
       const r = await apiGet(`/api/reports/cart/${cartId}${qs}`, token);
       setReport(r);
     } catch (e) {
@@ -106,32 +150,41 @@ export default function AdminReports() {
   }, [token]);
 
   useEffect(() => {
-    // auto refresh report ketika period/date/cart berubah
-    if (token && activeCartId) loadReport(activeCartId);
+    if (token && activeCartId) {
+      loadReport(activeCartId, startDate, endDate);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, activeCartId, period, date]);
+  }, [token, activeCartId, startDate, endDate]);
 
   const selectedCart = useMemo(
     () => carts.find((c) => c.id === activeCartId),
     [carts, activeCartId]
   );
 
-  const totals = report?.totals || report?.totalAll || {};
+  const totals = report?.totals || {};
   const sales = report?.sales || [];
   const topProducts = report?.topProducts || [];
-  const periodLabel = period === "week" ? "MINGGU" : "HARI";
 
   const visibleSales = showAllSales ? sales : sales.slice(0, 20);
 
+  const displayStartDate = report?.startDate || startDate;
+  const displayEndDate = report?.endDate || endDate;
+  const rangeLabel = formatRangeLabel(displayStartDate, displayEndDate);
+
   async function exportCsv() {
     if (!activeCartId) return;
+
+    const rangeErr = validateRange();
+    if (rangeErr) {
+      setErr(rangeErr);
+      return;
+    }
+
     setErr("");
     setMsg("");
     try {
-      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(
-        date
-      )}`;
-      const fallback = `report_${activeCartId}_${period}_${date}.csv`;
+      const qs = buildRangeQuery(startDate, endDate);
+      const fallback = `report_${activeCartId}_${startDate}_sd_${endDate}.csv`;
       await downloadWithAuth(
         `/api/reports/cart/${activeCartId}/export.csv${qs}`,
         token,
@@ -145,13 +198,18 @@ export default function AdminReports() {
 
   async function exportPdf() {
     if (!activeCartId) return;
+
+    const rangeErr = validateRange();
+    if (rangeErr) {
+      setErr(rangeErr);
+      return;
+    }
+
     setErr("");
     setMsg("");
     try {
-      const qs = `?period=${encodeURIComponent(period)}&date=${encodeURIComponent(
-        date
-      )}`;
-      const fallback = `report_${activeCartId}_${period}_${date}.pdf`;
+      const qs = buildRangeQuery(startDate, endDate);
+      const fallback = `report_${activeCartId}_${startDate}_sd_${endDate}.pdf`;
       await downloadWithAuth(
         `/api/reports/cart/${activeCartId}/export.pdf${qs}`,
         token,
@@ -163,11 +221,16 @@ export default function AdminReports() {
     }
   }
 
+  function handleTodayRange() {
+    const now = ymdWib();
+    setStartDate(now);
+    setEndDate(now);
+  }
+
   return (
     <div className="adm-bg adm adm-reports">
       <div className="adm-shell">
         <div className="adm-layout">
-          {/* SIDEBAR */}
           <aside className="adm-nav">
             <div className="adm-nav-card">
               <div className="adm-nav-title">Admin</div>
@@ -216,7 +279,11 @@ export default function AdminReports() {
                 >
                   Laporan
                 </button>
-                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/inventory")}>
+                <button
+                  className="adm-nav-item"
+                  type="button"
+                  onClick={() => nav("/admin/inventory")}
+                >
                   Stok
                 </button>
               </div>
@@ -237,7 +304,6 @@ export default function AdminReports() {
             </div>
           </aside>
 
-          {/* MAIN */}
           <main className="adm-main">
             <div className="adm-main-card">
               <div className="adm-header">
@@ -245,16 +311,24 @@ export default function AdminReports() {
                   <h2 className="adm-h2">Laporan</h2>
                   <div className="adm-subline">
                     <span className="muted">
-                      Pilih gerobak → laporan harian/mingguan → export PDF/CSV.
+                      Pilih gerobak → tentukan rentang tanggal → export PDF/CSV.
                     </span>
                   </div>
                 </div>
 
-                <div className="adm-actions">
+                <div className="adm-actions" style={{ flexWrap: "wrap", gap: 12 }}>
                   <button
                     className="btn secondary"
                     type="button"
-                    onClick={() => loadReport(activeCartId)}
+                    onClick={handleTodayRange}
+                    disabled={loadingReport}
+                  >
+                    Hari Ini
+                  </button>
+                  <button
+                    className="btn secondary"
+                    type="button"
+                    onClick={() => loadReport(activeCartId, startDate, endDate)}
                     disabled={!activeCartId || loadingReport}
                   >
                     {loadingReport ? "Loading..." : "Refresh"}
@@ -300,7 +374,6 @@ export default function AdminReports() {
                 </div>
               ) : null}
 
-              {/* FILTERS */}
               <section className="adm-panel" style={{ marginTop: 14 }}>
                 <div className="adm-panel-head">
                   <h3 className="adm-h3">Filter</h3>
@@ -333,30 +406,27 @@ export default function AdminReports() {
                   </div>
 
                   <div className="adm-field">
-                    <label>Periode</label>
-                    <select
-                      className="input"
-                      value={period}
-                      onChange={(e) => setPeriod(e.target.value)}
-                    >
-                      <option value="day">Per Hari</option>
-                      <option value="week">Per Minggu</option>
-                    </select>
-                  </div>
-
-                  <div className="adm-field">
-                    <label>Tanggal</label>
+                    <label>Dari Tanggal</label>
                     <input
                       className="input"
                       type="date"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="adm-field">
+                    <label>Sampai Tanggal</label>
+                    <input
+                      className="input"
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
                     />
                   </div>
                 </div>
               </section>
 
-              {/* SUMMARY */}
               {!report ? (
                 <div className="muted" style={{ marginTop: 12 }}>
                   Belum ada data laporan.
@@ -370,10 +440,8 @@ export default function AdminReports() {
                         <b>{selectedCart?.name || report?.cart?.name || "-"}</b>
                       </div>
                       <div className="adm-report-meta">
-                        <span className="adm-chip">
-                          {String(report.period || periodLabel).toUpperCase()}
-                        </span>
-                        <span className="adm-chip">{report.date || date}</span>
+                        <span className="adm-chip">RANGE</span>
+                        <span className="adm-chip">{rangeLabel}</span>
                       </div>
                     </div>
 
@@ -385,11 +453,15 @@ export default function AdminReports() {
                       <div className="adm-report-split">
                         <div>
                           <div className="muted">CASH</div>
-                          <div><b>{totals.cash ?? 0}</b></div>
+                          <div>
+                            <b>{totals.cash ?? 0}</b>
+                          </div>
                         </div>
                         <div>
                           <div className="muted">QRIS</div>
-                          <div><b>{totals.qris ?? 0}</b></div>
+                          <div>
+                            <b>{totals.qris ?? 0}</b>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -422,7 +494,6 @@ export default function AdminReports() {
                     </div>
                   </section>
 
-                  {/* SALES */}
                   <section className="adm-panel" style={{ marginTop: 14 }}>
                     <div className="adm-panel-head">
                       <h3 className="adm-h3">Transaksi</h3>
@@ -469,13 +540,26 @@ export default function AdminReports() {
                             <div className="adm-report-item-bottom">
                               <div className="adm-report-kv">
                                 <div className="muted">Diskon</div>
-                                <div><b>{s.discount}</b></div>
+                                <div>
+                                  <b>{s.discount}</b>
+                                </div>
                               </div>
                               <div className="adm-report-kv">
                                 <div className="muted">Net</div>
-                                <div className="adm-report-net"><b>{s.netTotal}</b></div>
+                                <div className="adm-report-net">
+                                  <b>{s.netTotal}</b>
+                                </div>
                               </div>
                             </div>
+
+                            {s.itemsSummary ? (
+                              <div
+                                className="muted"
+                                style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5 }}
+                              >
+                                {s.itemsSummary}
+                              </div>
+                            ) : null}
                           </div>
                         ))}
                       </div>
