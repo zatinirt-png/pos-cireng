@@ -38,6 +38,14 @@ function buildRangeQuery(startDate, endDate) {
   return raw ? `?${raw}` : "";
 }
 
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString("id-ID");
+}
+
+function shortTxnId(id) {
+  return String(id || "-").slice(-8).toUpperCase();
+}
+
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:4000";
 
 async function downloadWithAuth(path, token, fallbackName) {
@@ -76,6 +84,55 @@ export default function AdminReports() {
     localStorage.getItem("admin_token") || localStorage.getItem("auth_token");
 
   const today = ymdWib();
+  const thSticky = {
+    padding: "12px 10px",
+    background: "#f6f7fb",
+    borderBottom: "1px solid rgba(20,20,20,0.08)",
+    textAlign: "left",
+    whiteSpace: "nowrap",
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
+  };
+
+  const thGroup = {
+    padding: "12px 10px",
+    background: "#f6f7fb",
+    borderBottom: "1px solid rgba(20,20,20,0.08)",
+    textAlign: "center",
+    minWidth: 120,
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
+  };
+
+  const thSub = {
+    padding: "10px 8px",
+    background: "#fafbff",
+    borderBottom: "1px solid rgba(20,20,20,0.08)",
+    textAlign: "right",
+    whiteSpace: "nowrap",
+    position: "sticky",
+    top: 44,
+    zIndex: 1,
+  };
+
+  const tdBase = {
+    padding: "10px 10px",
+    borderBottom: "1px solid rgba(20,20,20,0.06)",
+    verticalAlign: "top",
+    background: "#fff",
+  };
+
+  const tdText = { ...tdBase, whiteSpace: "nowrap" };
+  const tdCenter = { ...tdBase, textAlign: "center", whiteSpace: "nowrap" };
+  const tdNum = { ...tdBase, textAlign: "right", whiteSpace: "nowrap" };
+  const tdNumStrong = {
+    ...tdNum,
+    fontWeight: 800,
+    background: "#fffaf2",
+  };
+
 
   const [carts, setCarts] = useState([]);
   const [activeCartId, setActiveCartId] = useState("");
@@ -164,6 +221,7 @@ export default function AdminReports() {
   const totals = report?.totals || {};
   const sales = report?.sales || [];
   const topProducts = report?.topProducts || [];
+  //const matrixColumns = report?.matrixColumns || []; // detail matrix tetap dipakai untuk export backend, tapi di UI admin tidak ditampilkan
 
   const visibleSales = showAllSales ? sales : sales.slice(0, 20);
 
@@ -448,19 +506,19 @@ export default function AdminReports() {
                     <div className="adm-panel adm-report-card">
                       <div className="muted">Total</div>
                       <div className="adm-report-money">
-                        <b>{totals.total ?? 0}</b>
+                        <b>{formatMoney(totals.total ?? 0)}</b>
                       </div>
                       <div className="adm-report-split">
                         <div>
                           <div className="muted">CASH</div>
                           <div>
-                            <b>{totals.cash ?? 0}</b>
+                            <b>{formatMoney(totals.cash ?? 0)}</b>
                           </div>
                         </div>
                         <div>
                           <div className="muted">QRIS</div>
                           <div>
-                            <b>{totals.qris ?? 0}</b>
+                            <b>{formatMoney(totals.qris ?? 0)}</b>
                           </div>
                         </div>
                       </div>
@@ -496,7 +554,13 @@ export default function AdminReports() {
 
                   <section className="adm-panel" style={{ marginTop: 14 }}>
                     <div className="adm-panel-head">
-                      <h3 className="adm-h3">Transaksi</h3>
+                      <div>
+                        <h3 className="adm-h3">Summary Transaksi</h3>
+                        <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                          Tampilan admin dibuat ringkas. Detail penuh tetap tersedia di export CSV dan PDF.
+                        </div>
+                      </div>
+
                       <div className="adm-inline" style={{ gap: 10 }}>
                         <span className="muted" style={{ fontSize: 12 }}>
                           {sales.length ? `${visibleSales.length} / ${sales.length}` : "0"}
@@ -516,55 +580,74 @@ export default function AdminReports() {
                     {!sales.length ? (
                       <div className="muted">Belum ada transaksi di periode ini.</div>
                     ) : (
-                      <div className="adm-report-list" role="list">
-                        {visibleSales.map((s) => (
-                          <div className="adm-report-item" key={s.id} role="listitem">
-                            <div className="adm-report-item-top">
-                              <div>
-                                <div className="adm-report-item-time">
-                                  {new Date(s.createdAt).toLocaleString("id-ID")}
-                                </div>
-                                <div className="adm-report-item-sub muted">
-                                  Kasir: {s.cashier || "-"}
-                                </div>
-                              </div>
-
-                              <div className="adm-report-item-badges">
-                                <span className="adm-badge">{s.paymentMethod || "-"}</span>
-                                <span className="adm-chip">
-                                  Gross: <b>{s.grossTotal}</b>
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="adm-report-item-bottom">
-                              <div className="adm-report-kv">
-                                <div className="muted">Diskon</div>
-                                <div>
-                                  <b>{s.discount}</b>
-                                </div>
-                              </div>
-                              <div className="adm-report-kv">
-                                <div className="muted">Net</div>
-                                <div className="adm-report-net">
-                                  <b>{s.netTotal}</b>
-                                </div>
-                              </div>
-                            </div>
-
-                            {s.itemsSummary ? (
-                              <div
-                                className="muted"
-                                style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5 }}
-                              >
-                                {s.itemsSummary}
-                              </div>
-                            ) : null}
-                          </div>
-                        ))}
+                      <div
+                        style={{
+                          overflowX: "auto",
+                          border: "1px solid rgba(20,20,20,0.08)",
+                          borderRadius: 16,
+                          background: "#fff",
+                        }}
+                      >
+                        <table
+                          style={{
+                            width: "100%",
+                            minWidth: 980,
+                            borderCollapse: "separate",
+                            borderSpacing: 0,
+                            fontSize: 13,
+                          }}
+                        >
+                          <thead>
+                            <tr>
+                              <th style={thSticky}>No</th>
+                              <th style={thSticky}>Transaksi</th>
+                              <th style={thSticky}>Waktu</th>
+                              <th style={thSticky}>Kasir</th>
+                              <th style={thSticky}>Metode</th>
+                              <th style={thSticky}>Ringkasan Item</th>
+                              <th style={thSticky}>Total Bayar</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {visibleSales.map((s, idx) => (
+                              <tr key={s.id}>
+                                <td style={tdCenter}>{idx + 1}</td>
+                                <td style={tdText}>{shortTxnId(s.id)}</td>
+                                <td style={tdText}>
+                                  {new Date(s.createdAt).toLocaleString("id-ID", {
+                                    timeZone: "Asia/Jakarta",
+                                  })}
+                                </td>
+                                <td style={tdText}>{s.cashier || "-"}</td>
+                                <td style={tdText}>{s.paymentMethod || "-"}</td>
+                                <td
+                                  style={{
+                                    ...tdBase,
+                                    minWidth: 320,
+                                    whiteSpace: "normal",
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  {s.itemsFullSummary || s.itemsSummary || "-"}
+                                </td>
+                                <td
+                                  style={{
+                                    ...tdNum,
+                                    fontWeight: 800,
+                                    background: "#fffaf2",
+                                  }}
+                                >
+                                  {formatMoney(s.netTotal || 0)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </section>
+
+                  
                 </>
               )}
             </div>
