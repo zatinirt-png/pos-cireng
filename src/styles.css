@@ -1732,14 +1732,32 @@ label{ font-size: 12px; opacity: 0.8; display: block; margin-bottom: 6px; }
 
 /* Responsive */
 @media (max-width: 980px){
-  .adm-layout{ grid-template-columns: 1fr; }
-  .adm-nav{ position: static; }
-  .adm-nav-card{ padding: 12px; }
+  .adm-layout{
+    grid-template-columns: 1fr;
+  }
+
+  .adm-nav{
+    position: static;
+  }
+
+  .adm-nav-card{
+    padding: 12px;
+  }
+
+  /* sebelumnya horizontal scroll -> sekarang dibikin wrap */
   .adm-nav-list{
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(160px, 1fr);
-    overflow: auto;
-    padding-bottom: 8px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .adm-nav-item{
+    min-width: 0;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.25;
   }
 }
 
@@ -3472,4 +3490,548 @@ body{
 }
 .queue-list--hscroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
+}
+
+/* =========================================================
+   RESPONSIVE OVERRIDE 2026-03
+   Fokus: mobile-first untuk POS, admin, partner, modal, dan tabel.
+   Simpan block ini di BAGIAN PALING BAWAH styles.css.
+   ========================================================= */
+
+.pos-shell,
+.adm-shell,
+.prt-shell,
+.pos-grid,
+.adm-layout,
+.adm-main,
+.adm-main-card,
+.pos-col,
+.pos-card,
+.adm-panel,
+.modal,
+.modal-card {
+  min-width: 0;
+}
+
+.table-wrap--mobile {
+  width: 100%;
+  max-width: 100%;
+}
+
+.table--mobile {
+  width: 100%;
+}
+
+.pos-bg .table--mobile,
+.adm .table--mobile,
+.prt .table--mobile,
+.modal .table--mobile,
+.modal-card .table--mobile {
+  min-width: 0 !important;
+}
+
+.adm-report-table-wrap {
+  border: 1px solid rgba(20, 20, 20, 0.08);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.adm-report-table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-size: 13px;
+}
+
+.pos-stock-open-item {
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  gap: 10px;
+  align-items: center;
+}
+
+.stock-request-rows {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.stock-request-row {
+  display: grid;
+  grid-template-columns: 1fr 120px 90px;
+  gap: 10px;
+}
+
+.stock-request-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.stock-request-note {
+  min-width: 240px;
+  flex: 1 1 240px;
+}
+
+.stock-adjust-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.stock-adjust-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1024px) {
+  .container,
+  .pos-shell,
+  .adm-shell {
+    max-width: 100%;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .pos-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pos-title-wrap,
+  .topbar-left,
+  .topbar-titles {
+    min-width: 0;
+  }
+
+  .pos-grid--cashier .pos-col--queue {
+    order: -1;
+  }
+
+  .grid-products {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .queue-list--hscroll .queue-item {
+    flex: 0 0 320px;
+    max-width: 320px;
+  }
+
+  .modal,
+  .modal-card {
+    width: min(960px, calc(100vw - 24px)) !important;
+    max-height: calc(100vh - 32px) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --topbar-h: 56px;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+
+  .topbar {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .topbar-logo {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .topbar-title {
+    font-size: 14px;
+  }
+
+  .topbar-subtitle,
+  .topbar-left .badge {
+    display: none;
+  }
+
+  .topbar-menu-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .sidenav-overlay,
+  .sidenav-panel {
+    top: var(--topbar-h);
+  }
+
+  .sidenav-panel {
+    width: min(100vw, 420px);
+  }
+
+  .pos-shell,
+  .adm-shell {
+    padding: 10px;
+  }
+
+  .pos-card,
+  .adm-main-card,
+  .adm-panel,
+  .adm-nav-card,
+  .gate-card,
+  .loading-card {
+    border-radius: 16px !important;
+    padding: 12px !important;
+  }
+
+  .adm-h2 {
+    font-size: 22px;
+  }
+
+  .pos-title {
+    font-size: 18px;
+  }
+
+  .pos-header-row,
+  .adm-header,
+  .adm-actions-row,
+  .modal-header,
+  .modal-head,
+  .modal-foot,
+  .pos-totalbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pos-header-actions,
+  .adm-actions,
+  .adm-actions-right,
+  .modal-actions,
+  .pos-actions,
+  .sidenav-footer-actions {
+    width: 100%;
+  }
+
+  .pos-header-actions .btn,
+  .adm-actions .btn,
+  .adm-actions-right .btn,
+  .modal-actions .btn,
+  .pos-actions .btn,
+  .sidenav-footer-actions .sidenav-cta {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px;
+  }
+
+  .tab {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .row {
+    gap: 10px;
+  }
+
+  .grid-products {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .prod,
+  .queue-item {
+    border-radius: 14px;
+  }
+
+  .queue-list--hscroll {
+    padding: 4px 2px 10px;
+  }
+
+  .queue-list--hscroll .queue-item {
+    flex: 0 0 84vw;
+    max-width: 84vw;
+  }
+
+  .qty-ctrl {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .qty-ctrl .btn {
+    min-width: 40px;
+  }
+
+  .modal-overlay {
+    padding: 10px !important;
+    align-items: flex-end !important;
+  }
+
+  .modal,
+  .modal-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100vh - 20px) !important;
+    border-radius: 18px 18px 0 0 !important;
+  }
+
+  .modal-header,
+  .modal-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #fff;
+    padding-bottom: 10px;
+  }
+
+  .modal-footer,
+  .modal-foot {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: #fff;
+  }
+
+  .pos-stock-open-item,
+  .stock-request-row,
+  .stock-adjust-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stock-request-actions,
+  .stock-adjust-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stock-request-note {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .table-wrap--mobile {
+    overflow: visible !important;
+  }
+
+  .table--mobile,
+  .adm-report-table.table--mobile {
+    min-width: 0 !important;
+  }
+
+  .table--mobile thead {
+    display: none;
+  }
+
+  .table--mobile,
+  .table--mobile tbody,
+  .table--mobile tr,
+  .table--mobile td {
+    display: block;
+    width: 100%;
+  }
+
+  .table--mobile tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  .table--mobile tr {
+    border: 1px solid rgba(20, 20, 20, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+    padding: 10px 12px;
+  }
+
+  .table--mobile td {
+    border: 0 !important;
+    padding: 6px 0 !important;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    white-space: normal !important;
+    max-width: 100%;
+  }
+
+  .table--mobile td::before {
+    content: attr(data-label);
+    flex: 0 0 42%;
+    font-size: 12px;
+    font-weight: 900;
+    color: rgba(15, 23, 42, 0.64);
+  }
+
+  .table--mobile td > * {
+    min-width: 0;
+  }
+
+  .table--mobile td[data-label="Item"],
+  .table--mobile td[data-label="Produk"],
+  .table--mobile td[data-label="Bahan"],
+  .table--mobile td[data-label="Ringkasan Item"],
+  .table--mobile td[data-label="Reason / Note"],
+  .table--mobile td[data-label="Catatan"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .table--mobile td[data-label="Item"]::before,
+  .table--mobile td[data-label="Produk"]::before,
+  .table--mobile td[data-label="Bahan"]::before,
+  .table--mobile td[data-label="Ringkasan Item"]::before,
+  .table--mobile td[data-label="Reason / Note"]::before,
+  .table--mobile td[data-label="Catatan"]::before {
+    margin-bottom: 4px;
+  }
+
+  .table--mobile td[colspan] {
+    display: block;
+  }
+
+  .table--mobile td[colspan]::before {
+    display: none;
+  }
+
+  .table--mobile .qty-ctrl {
+    justify-content: flex-start;
+  }
+
+  .table--mobile input,
+  .table--mobile select,
+  .table--mobile textarea {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .grid-products {
+    grid-template-columns: 1fr;
+  }
+
+  .queue-list--hscroll .queue-item {
+    flex-basis: 88vw;
+    max-width: 88vw;
+  }
+
+  .btn,
+  .input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  .pill,
+  .badge {
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+/* =========================================================
+   FIX ADMIN MOBILE REPORTS / DASHBOARD
+   Khusus layar kecil agar tidak terpotong ke kanan
+   ========================================================= */
+
+@media (max-width: 768px){
+  .adm-bg,
+  .adm-shell,
+  .adm-layout,
+  .adm-layout > *,
+  .adm-main-card,
+  .adm-panel,
+  .adm-nav-card {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .adm-shell{
+    padding: 10px;
+  }
+
+  .adm-main-card{
+    padding: 12px;
+    border-radius: 18px;
+  }
+
+  .adm-panel{
+    padding: 12px;
+    border-radius: 16px;
+  }
+
+  .adm-header,
+  .adm-panel-head,
+  .adm-actions-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .adm-actions{
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .adm-actions .btn{
+    width: 100%;
+  }
+
+  .adm-inline{
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .adm-report-filters{
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .adm-report-stats{
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .adm-subline{
+    min-width: 0;
+  }
+
+  .adm-subline .muted{
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .adm-nav-list{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .adm-nav-item{
+    padding: 12px 10px;
+    font-size: 13px;
+    border-radius: 14px;
+  }
+}
+
+@media (max-width: 520px){
+  .adm-nav-list{
+    grid-template-columns: 1fr;
+  }
+
+  .adm-h2{
+    font-size: 22px;
+  }
+
+  .adm-main-card{
+    padding: 10px;
+  }
+
+  .adm-panel{
+    padding: 10px;
+  }
 }

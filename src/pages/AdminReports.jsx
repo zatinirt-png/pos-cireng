@@ -580,23 +580,8 @@ export default function AdminReports() {
                     {!sales.length ? (
                       <div className="muted">Belum ada transaksi di periode ini.</div>
                     ) : (
-                      <div
-                        style={{
-                          overflowX: "auto",
-                          border: "1px solid rgba(20,20,20,0.08)",
-                          borderRadius: 16,
-                          background: "#fff",
-                        }}
-                      >
-                        <table
-                          style={{
-                            width: "100%",
-                            minWidth: 980,
-                            borderCollapse: "separate",
-                            borderSpacing: 0,
-                            fontSize: 13,
-                          }}
-                        >
+                      <div className="adm-report-table-wrap table-wrap--mobile">
+                        <table className="adm-report-table table--mobile" style={{ width: "100%" }}>
                           <thead>
                             <tr>
                               <th style={thSticky}>No</th>
@@ -611,16 +596,30 @@ export default function AdminReports() {
                           <tbody>
                             {visibleSales.map((s, idx) => (
                               <tr key={s.id}>
-                                <td style={tdCenter}>{idx + 1}</td>
-                                <td style={tdText}>{shortTxnId(s.id)}</td>
-                                <td style={tdText}>
+                                <td data-label="No" style={tdCenter}>
+                                  {idx + 1}
+                                </td>
+
+                                <td data-label="Transaksi" style={tdText}>
+                                  {shortTxnId(s.id)}
+                                </td>
+
+                                <td data-label="Waktu" style={tdText}>
                                   {new Date(s.createdAt).toLocaleString("id-ID", {
                                     timeZone: "Asia/Jakarta",
                                   })}
                                 </td>
-                                <td style={tdText}>{s.cashier || "-"}</td>
-                                <td style={tdText}>{s.paymentMethod || "-"}</td>
+
+                                <td data-label="Kasir" style={tdText}>
+                                  {s.cashier || "-"}
+                                </td>
+
+                                <td data-label="Metode" style={tdText}>
+                                  {s.paymentMethod || "-"}
+                                </td>
+
                                 <td
+                                  data-label="Ringkasan Item"
                                   style={{
                                     ...tdBase,
                                     minWidth: 320,
@@ -630,7 +629,9 @@ export default function AdminReports() {
                                 >
                                   {s.itemsFullSummary || s.itemsSummary || "-"}
                                 </td>
+
                                 <td
+                                  data-label="Total Bayar"
                                   style={{
                                     ...tdNum,
                                     fontWeight: 800,

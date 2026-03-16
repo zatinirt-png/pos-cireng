@@ -1175,14 +1175,8 @@ async function saveOrderEdits(orderId) {
                               return (
                                 <div
                                   key={s.id}
-                                  className="pos-card"
-                                  style={{
-                                    padding: 12,
-                                    display: "grid",
-                                    gridTemplateColumns: "1fr 140px",
-                                    gap: 10,
-                                    alignItems: "center",
-                                  }}
+                                  className="pos-card pos-stock-open-item"
+                                  
                                 >
                                   <label
                                     style={{
@@ -1271,14 +1265,8 @@ async function saveOrderEdits(orderId) {
                               {invCentralStocks.map((s) => (
                                 <div
                                   key={s.id}
-                                  className="pos-card"
-                                  style={{
-                                    padding: 12,
-                                    display: "grid",
-                                    gridTemplateColumns: "1fr 140px",
-                                    gap: 10,
-                                    alignItems: "center",
-                                  }}
+                                  className="pos-card pos-stock-open-item"
+                                  
                                 >
                                   <div>
                                     <div style={{ fontWeight: 700 }}>
@@ -1439,8 +1427,8 @@ async function saveOrderEdits(orderId) {
                           {cart.length === 0 ? (
                             <div className="muted">Belum ada item.</div>
                           ) : (
-                            <div className="table-wrap">
-                              <table className="table">
+                            <div className="table-wrap table-wrap--mobile">
+                              <table className="table table--mobile">
                                 <thead>
                                   <tr>
                                     <th>Item</th>
@@ -1452,7 +1440,7 @@ async function saveOrderEdits(orderId) {
                                 <tbody>
                                   {cart.map((it) => (
                                     <tr key={it.key}>
-                                      <td>
+                                      <td data-label="Item">
                                         <div><b>{it.name}</b></div>
                                         <div style={{ marginTop: 8 }}>
                                           <input
@@ -1471,7 +1459,8 @@ async function saveOrderEdits(orderId) {
                                           />
                                         </div>
                                       </td>
-                                      <td>
+
+                                      <td data-label="Qty">
                                         <div className="qty-ctrl">
                                           <button
                                             className="btn secondary"
@@ -1490,8 +1479,12 @@ async function saveOrderEdits(orderId) {
                                           </button>
                                         </div>
                                       </td>
-                                      <td><b>{rupiah(it.price * it.qty)}</b></td>
-                                      <td>
+
+                                      <td data-label="Subtotal">
+                                        <b>{rupiah(it.price * it.qty)}</b>
+                                      </td>
+
+                                      <td data-label="Aksi">
                                         <button
                                           className="btn danger"
                                           type="button"
@@ -1662,22 +1655,45 @@ async function saveOrderEdits(orderId) {
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {movementsFiltered.slice(0, 20).map((m) => (
-                                      <tr key={m.id}>
-                                        <td>{new Date(m.createdAt).toLocaleTimeString("id-ID")}</td>
-                                        <td>
-                                          <span
-                                            className={`badge ${
-                                              m.type === "CASH_IN" ? "badge--accent1" : "badge--danger"
-                                            }`}
-                                          >
-                                            {m.type}
-                                          </span>
-                                        </td>
-                                        <td><b>{rupiah(m.amount)}</b></td>
-                                        <td className="muted">{m.note || "-"}</td>
-                                      </tr>
-                                    ))}
+                                    <div className="table-wrap table-wrap--mobile">
+                                      <table className="table table--mobile">
+                                        <thead>
+                                          <tr>
+                                            <th>Waktu</th>
+                                            <th>Jenis</th>
+                                            <th>Nominal</th>
+                                            <th>Catatan</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {movementsFiltered.slice(0, 20).map((m) => (
+                                            <tr key={m.id}>
+                                              <td data-label="Waktu">
+                                                {new Date(m.createdAt).toLocaleTimeString("id-ID")}
+                                              </td>
+
+                                              <td data-label="Jenis">
+                                                <span
+                                                  className={`badge ${
+                                                    m.type === "CASH_IN" ? "badge--accent1" : "badge--danger"
+                                                  }`}
+                                                >
+                                                  {m.type}
+                                                </span>
+                                              </td>
+
+                                              <td data-label="Nominal">
+                                                <b>{rupiah(m.amount)}</b>
+                                              </td>
+
+                                              <td data-label="Catatan" className="muted">
+                                                {m.note || "-"}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
                                   </tbody>
                                 </table>
                               </div>
@@ -2044,98 +2060,115 @@ async function saveOrderEdits(orderId) {
                           </tr>
                         </thead>
                         <tbody>
-                          {(editItems || []).map((row) => {
-                            const unit = editUnitPrice(row);
-                            const qty = Number(row.qty || 0);
-                            const sub = Math.max(0, (Number.isFinite(qty) ? qty : 0) * unit);
+                          <div className="table-wrap table-wrap--mobile">
+                            <table className="table table--mobile">
+                              <thead>
+                                <tr>
+                                  <th>Produk</th>
+                                  <th style={{ width: 110 }}>Portion</th>
+                                  <th style={{ width: 160 }}>Qty</th>
+                                  <th style={{ width: 140 }}>Subtotal</th>
+                                  <th style={{ width: 90 }}></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(editItems || []).map((row) => {
+                                  const unit = editUnitPrice(row);
+                                  const qty = Number(row.qty || 0);
+                                  const sub = Math.max(0, (Number.isFinite(qty) ? qty : 0) * unit);
 
-                            return (
-                              <tr key={row.rowId}>
-                                <td>
-                                  <select
-                                    className="input"
-                                    value={row.productId || ""}
-                                    onChange={(e) => patchEditRow(row.rowId, { productId: e.target.value })}
-                                  >
-                                    {activeProducts.map((p) => (
-                                      <option key={p.id} value={p.id}>
-                                        {p.name}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  return (
+                                    <tr key={row.rowId}>
+                                      <td data-label="Produk">
+                                        <select
+                                          className="input"
+                                          value={row.productId || ""}
+                                          onChange={(e) => patchEditRow(row.rowId, { productId: e.target.value })}
+                                        >
+                                          {activeProducts.map((p) => (
+                                            <option key={p.id} value={p.id}>
+                                              {p.name}
+                                            </option>
+                                          ))}
+                                        </select>
 
-                                  <input
-                                    className="input"
-                                    style={{ marginTop: 8 }}
-                                    placeholder="Catatan item (opsional)"
-                                    value={row.itemNote || ""}
-                                    onChange={(e) => patchEditRow(row.rowId, { itemNote: e.target.value })}
-                                  />
-                                </td>
+                                        <input
+                                          className="input"
+                                          style={{ marginTop: 8 }}
+                                          placeholder="Catatan item (opsional)"
+                                          value={row.itemNote || ""}
+                                          onChange={(e) => patchEditRow(row.rowId, { itemNote: e.target.value })}
+                                        />
+                                      </td>
 
-                                <td>
-                                  <select
-                                    className="input"
-                                    value={row.portion === "LARGE" ? "LARGE" : "SMALL"}
-                                    onChange={(e) => patchEditRow(row.rowId, { portion: e.target.value })}
-                                  >
-                                    <option value="SMALL">SMALL</option>
-                                    <option value="LARGE">LARGE</option>
-                                  </select>
-                                </td>
+                                      <td data-label="Portion">
+                                        <select
+                                          className="input"
+                                          value={row.portion === "LARGE" ? "LARGE" : "SMALL"}
+                                          onChange={(e) => patchEditRow(row.rowId, { portion: e.target.value })}
+                                        >
+                                          <option value="SMALL">SMALL</option>
+                                          <option value="LARGE">LARGE</option>
+                                        </select>
+                                      </td>
 
-                                <td>
-                                  <div className="qty-ctrl">
-                                    <button
-                                      className="btn secondary btn--sm"
-                                      type="button"
-                                      onClick={() =>
-                                        patchEditRow(row.rowId, {
-                                          qty: Math.max(1, Number(row.qty || 1) - 1),
-                                        })
-                                      }
-                                    >
-                                      -
-                                    </button>
-                                    <input
-                                      className="input"
-                                      type="number"
-                                      value={row.qty}
-                                      onChange={(e) =>
-                                        patchEditRow(row.rowId, {
-                                          qty: Math.max(1, Number(e.target.value || 1)),
-                                        })
-                                      }
-                                      style={{ width: 70, textAlign: "center" }}
-                                    />
-                                    <button
-                                      className="btn secondary btn--sm"
-                                      type="button"
-                                      onClick={() =>
-                                        patchEditRow(row.rowId, { qty: Number(row.qty || 1) + 1 })
-                                      }
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </td>
+                                      <td data-label="Qty">
+                                        <div className="qty-ctrl">
+                                          <button
+                                            className="btn secondary btn--sm"
+                                            type="button"
+                                            onClick={() =>
+                                              patchEditRow(row.rowId, {
+                                                qty: Math.max(1, Number(row.qty || 1) - 1),
+                                              })
+                                            }
+                                          >
+                                            -
+                                          </button>
 
-                                <td>
-                                  <b>{rupiah(sub)}</b>
-                                </td>
+                                          <input
+                                            className="input"
+                                            type="number"
+                                            value={row.qty}
+                                            onChange={(e) =>
+                                              patchEditRow(row.rowId, {
+                                                qty: Math.max(1, Number(e.target.value || 1)),
+                                              })
+                                            }
+                                            style={{ width: 70, textAlign: "center" }}
+                                          />
 
-                                <td style={{ textAlign: "right" }}>
-                                  <button
-                                    className="btn danger btn--sm"
-                                    type="button"
-                                    onClick={() => removeEditRow(row.rowId)}
-                                  >
-                                    Hapus
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
+                                          <button
+                                            className="btn secondary btn--sm"
+                                            type="button"
+                                            onClick={() =>
+                                              patchEditRow(row.rowId, { qty: Number(row.qty || 1) + 1 })
+                                            }
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </td>
+
+                                      <td data-label="Subtotal">
+                                        <b>{rupiah(sub)}</b>
+                                      </td>
+
+                                      <td data-label="Aksi" style={{ textAlign: "right" }}>
+                                        <button
+                                          className="btn danger btn--sm"
+                                          type="button"
+                                          onClick={() => removeEditRow(row.rowId)}
+                                        >
+                                          Hapus
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         </tbody>
                       </table>
                     </div>
@@ -2217,25 +2250,42 @@ async function saveOrderEdits(orderId) {
                           </tr>
                         </thead>
                         <tbody>
-                          {(openOrder.items || []).map((it) => (
-                            <tr key={it.id}>
-                              <td>
-                                <b>{it.product?.name || "(Produk)"}</b>
-                                {it.itemNote ? (
-                                  <div className="muted" style={{ fontSize: 12 }}>
-                                    {it.itemNote}
-                                  </div>
-                                ) : null}
-                              </td>
-                              <td>
-                                <span className="badge badge--neutral">{it.portion}</span>
-                              </td>
-                              <td>{it.qty}</td>
-                              <td>
-                                <b>{rupiah(Number(it.price || 0) * Number(it.qty || 0))}</b>
-                              </td>
-                            </tr>
-                          ))}
+                          <div className="table-wrap table-wrap--mobile">
+                            <table className="table table--mobile">
+                              <thead>
+                                <tr>
+                                  <th>Produk</th>
+                                  <th style={{ width: 90 }}>Portion</th>
+                                  <th style={{ width: 90 }}>Qty</th>
+                                  <th style={{ width: 140 }}>Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(openOrder.items || []).map((it) => (
+                                  <tr key={it.id}>
+                                    <td data-label="Produk">
+                                      <b>{it.product?.name || "(Produk)"}</b>
+                                      {it.itemNote ? (
+                                        <div className="muted" style={{ fontSize: 12 }}>
+                                          {it.itemNote}
+                                        </div>
+                                      ) : null}
+                                    </td>
+
+                                    <td data-label="Portion">
+                                      <span className="badge badge--neutral">{it.portion}</span>
+                                    </td>
+
+                                    <td data-label="Qty">{it.qty}</td>
+
+                                    <td data-label="Subtotal">
+                                      <b>{rupiah(Number(it.price || 0) * Number(it.qty || 0))}</b>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </tbody>
                       </table>
                     </div>
