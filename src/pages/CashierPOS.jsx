@@ -59,7 +59,7 @@ export default function CashierPOS() {
 
   async function loadMeta({ silent = false } = {}) {
     try {
-      const metaRes = await apiGet("/api/meta");
+      const metaRes = await apiGet("/api/meta", token);
       setMeta(metaRes);
       setMetaSyncAt(new Date());
       setMetaSyncErr("");
@@ -178,7 +178,7 @@ export default function CashierPOS() {
 
     try {
       const [metaRes, shiftRes] = await Promise.all([
-        apiGet("/api/meta"),
+        apiGet("/api/meta", token),
         apiGet("/api/shifts/current", token),
       ]);
 
@@ -1374,7 +1374,7 @@ async function saveOrderEdits(orderId) {
                           <div className="pos-section-head">
                             <h3 className="pos-h3">Menu</h3>
                             <span className="muted">
-                              Tap “Kecil/Besar” untuk tambah item
+                              Harga mengikuti gerobak aktif: {cartName}
                             </span>
                           </div>
 
@@ -1391,6 +1391,11 @@ async function saveOrderEdits(orderId) {
                                 <small className="muted">
                                   Kecil {rupiah(p.priceSmall)} • Besar {rupiah(p.priceLarge)}
                                 </small>
+                                {p.hasPriceOverride ? (
+                                  <small className="muted" style={{ display: "block", marginTop: 4 }}>
+                                    Harga khusus gerobak ini
+                                  </small>
+                                ) : null}
 
                                 <div className="prod-actions prod-actions--split">
                                   <button

@@ -58,6 +58,13 @@ function normalizeCartReportToTodayShape(cartReport, fallbackCartId) {
     netTotal: Number(s.netTotal || 0),
   }));
 
+  const rawPortionTotals = cartReport?.portionTotals || {};
+  const portionTotals = {
+    small: Number(rawPortionTotals.small || 0),
+    large: Number(rawPortionTotals.large || 0),
+    total: Number(rawPortionTotals.total || 0),
+  };
+
   return {
     date: cartReport?.date || "",
     startDate: cartReport?.startDate || "",
@@ -65,6 +72,7 @@ function normalizeCartReportToTodayShape(cartReport, fallbackCartId) {
     range: cartReport?.range || null,
     totalAll: { cash, qris, total },
     perCart: [{ cartId, cartName, cash, qris, total }],
+    portionTotals,
     topProducts: Array.isArray(cartReport?.topProducts) ? cartReport.topProducts : [],
     recentSales,
   };
@@ -226,6 +234,15 @@ export default function Dashboard() {
     const arr = report?.perCart ? [...report.perCart] : [];
     arr.sort((a, b) => (b.total || 0) - (a.total || 0));
     return arr;
+  }, [report]);
+
+  const portionTotals = useMemo(() => {
+    const raw = report?.portionTotals || {};
+    return {
+      small: Number(raw.small || 0),
+      large: Number(raw.large || 0),
+      total: Number(raw.total || 0),
+    };
   }, [report]);
 
   const updatedText = updatedAt
@@ -397,6 +414,19 @@ export default function Dashboard() {
                     <span className="adm-dot">•</span>
                     <span>
                       QRIS: <b>{rupiah(totalAll.qris)}</b>
+                    </span>
+                  </div>
+                  <div className="adm-kpi-sub" style={{ marginTop: 8, flexWrap: "wrap" }}>
+                    <span>
+                      Porsi Kecil: <b>{portionTotals.small}</b>
+                    </span>
+                    <span className="adm-dot">•</span>
+                    <span>
+                      Porsi Besar: <b>{portionTotals.large}</b>
+                    </span>
+                    <span className="adm-dot">•</span>
+                    <span>
+                      Total Porsi: <b>{portionTotals.total}</b>
                     </span>
                   </div>
                   <div className="adm-kpi-hint">*Update otomatis saat transaksi masuk (socket/polling).</div>

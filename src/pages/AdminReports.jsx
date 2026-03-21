@@ -221,6 +221,14 @@ export default function AdminReports() {
   const totals = report?.totals || {};
   const sales = report?.sales || [];
   const topProducts = report?.topProducts || [];
+  const portionTotals = useMemo(() => {
+    const raw = report?.portionTotals || {};
+    return {
+      small: Number(raw.small || 0),
+      large: Number(raw.large || 0),
+      total: Number(raw.total || 0),
+    };
+  }, [report]);
   //const matrixColumns = report?.matrixColumns || []; // detail matrix tetap dipakai untuk export backend, tapi di UI admin tidak ditampilkan
 
   const visibleSales = showAllSales ? sales : sales.slice(0, 20);
@@ -549,6 +557,27 @@ export default function AdminReports() {
                           ))}
                         </ol>
                       )}
+                    </div>
+
+                    <div className="adm-panel adm-report-card">
+                      <div className="muted">Total Porsi</div>
+                      <div className="adm-report-money">
+                        <b>{portionTotals.total}</b>
+                      </div>
+                      <div className="adm-report-split">
+                        <div>
+                          <div className="muted">PORSI KECIL</div>
+                          <div>
+                            <b>{portionTotals.small}</b>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="muted">PORSI BESAR</div>
+                          <div>
+                            <b>{portionTotals.large}</b>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </section>
 

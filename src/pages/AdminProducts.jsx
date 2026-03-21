@@ -454,6 +454,10 @@ export default function AdminProducts() {
                 </div>
               ) : null}
 
+              <div className="adm-alert adm-alert--ok" style={{ marginTop: 12 }}>
+                Harga di halaman ini adalah harga default global. Harga khusus per gerobak diatur dari menu <b>Kelola Gerobak</b>.
+              </div>
+
               <div className="adm-panels" style={{ marginTop: 14 }}>
                 {/* FORM PANEL */}
                 <section className="adm-panel">
