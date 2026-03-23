@@ -95,14 +95,8 @@ function buildLocalRecipeAudit({ isActive, recipeEnabled, recipeRows, ingredient
     : [];
 
   const ingredientMap = new Map((ingredients || []).map((x) => [x.id, x]));
-  const cireng = (ingredients || []).find((x) => String(x.name || "").trim().toLowerCase() === "cireng") || null;
-  const kemasan = (ingredients || []).find((x) => String(x.name || "").trim().toLowerCase() === "kemasan") || null;
 
   const coreSetupIssues = [];
-  if (!cireng) coreSetupIssues.push("Master ingredient Cireng belum ada / belum aktif.");
-  if (!kemasan) coreSetupIssues.push("Master ingredient Kemasan belum ada / belum aktif.");
-  if (cireng?.isGlobal) coreSetupIssues.push("Ingredient Cireng harus CART / non-global.");
-  if (kemasan?.isGlobal) coreSetupIssues.push("Ingredient Kemasan harus CART / non-global.");
 
   const byIngredient = new Map();
   const inactiveIngredients = [];
@@ -143,8 +137,7 @@ function buildLocalRecipeAudit({ isActive, recipeEnabled, recipeRows, ingredient
   }
 
   const missingCoreIngredients = [];
-  if (cireng && !ingredientCovered(cireng.id)) missingCoreIngredients.push("Cireng");
-  if (kemasan && !ingredientCovered(kemasan.id)) missingCoreIngredients.push("Kemasan");
+  
 
   const hasAnyRecipe = rows.length > 0;
   const hasSmallCoverage = allRows > 0 || smallRows > 0;
@@ -424,30 +417,26 @@ export default function AdminProducts() {
     const cireng = (ingredients || []).find(
       (x) => String(x.name || "").trim().toLowerCase() === "cireng"
     );
-    const kemasan = (ingredients || []).find(
-      (x) => String(x.name || "").trim().toLowerCase() === "kemasan"
-    );
 
-    if (!cireng || !kemasan) {
-      setRecipeErr("Preset gagal. Bahan wajib Cireng / Kemasan belum ada di master ingredients.");
+    if (!cireng) {
+      setRecipeErr("Preset gagal. Bahan wajib Cireng belum ada di master ingredients.");
       return;
     }
 
     setRecipeEnabled(true);
     setRecipeRows((prev) => {
       const cleaned = (prev || []).filter(
-        (x) => String(x.ingredientId || "") !== cireng.id && String(x.ingredientId || "") !== kemasan.id
+        (x) => String(x.ingredientId || "") !== cireng.id
       );
 
       return [
         ...cleaned,
         { ingredientId: cireng.id, portion: "SMALL", qty: 8 },
         { ingredientId: cireng.id, portion: "LARGE", qty: 13 },
-        { ingredientId: kemasan.id, portion: "ALL", qty: 1 },
       ];
     });
 
-    setRecipeMsg("Preset CBUR diterapkan. Tambahkan saus atau bahan lain sesuai varian.");
+    setRecipeMsg("Preset CBUR diterapkan. Tambahkan saus, topping, atau kemasan bila diperlukan.");
   }
 
   async function submit(e) {
@@ -846,7 +835,7 @@ export default function AdminProducts() {
                       </div>
 
                       <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                        Recipe menentukan auto-deduct stok. Produk cireng wajib punya bahan inti <b>Cireng</b> dan <b>Kemasan</b>.
+                        Recipe menentukan auto-deduct stok. Tidak ada bahan wajib pada recipe. Susun bahan sesuai kebutuhan menu.
                       </div>
 
                       {ingLoading ? <div className="muted">Loading bahan...</div> : null}
@@ -901,7 +890,7 @@ export default function AdminProducts() {
                             <div style={{ fontWeight: 800 }}>
                               {recipeAudit?.missingCoreIngredients?.length
                                 ? `Kurang ${recipeAudit.missingCoreIngredients.join(", ")}`
-                                : "Cireng + Kemasan siap"}
+                                : "Resep siap"}
                             </div>
                           </div>
 
@@ -933,7 +922,7 @@ export default function AdminProducts() {
                             </button>
 
                             <button className="btn secondary btn--sm" type="button" onClick={applyCburPreset}>
-                              Preset CBUR (8/13 + Kemasan)
+                              Preset CBUR (8/13 Cireng)
                             </button>
 
                             {form.id ? (

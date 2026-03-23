@@ -23,7 +23,7 @@ function normName(s) {
 
 function isCoreStockName(name) {
   const n = String(name || "").trim().toLowerCase();
-  return n === "cireng" || n === "kemasan";
+  return n === "cireng";
 }
 
 export default function CashierPOS() {
@@ -445,16 +445,11 @@ export default function CashierPOS() {
       const hasCireng = (invStocks || []).some(
         (s) => String(s.name || "").toLowerCase() === "cireng"
       );
-      const hasKemasan = (invStocks || []).some(
-        (s) => String(s.name || "").toLowerCase() === "kemasan"
-      );
-
+      
       if (hasCireng && !selected.some((s) => String(s.name || "").toLowerCase() === "cireng")) {
         throw new Error("Cireng wajib dipilih untuk stok awal.");
       }
-      if (hasKemasan && !selected.some((s) => String(s.name || "").toLowerCase() === "kemasan")) {
-        throw new Error("Kemasan wajib dipilih untuk stok awal.");
-      }
+      
 
       const openingStocks = selected.map((s) => ({
         ingredientId: s.id,
@@ -1142,8 +1137,8 @@ async function saveOrderEdits(orderId) {
                             }}
                           >
                             <span className="muted">
-                              Centang bahan yang kamu simpan hari ini. Cireng &
-                              Kemasan wajib.
+                              Centang bahan yang kamu simpan hari ini. Cireng Wajib
+                        
                             </span>
                             <button
                               className="btn secondary btn--sm"
@@ -1245,7 +1240,7 @@ async function saveOrderEdits(orderId) {
                         ) : (
                           <div className="muted">
                             Inventory belum aktif / belum ada bahan. (Admin perlu
-                            tambah ingredient seperti Cireng & Kemasan.)
+                            tambah ingredient seperti Cireng.)
                           </div>
                         )}
                       </div>
