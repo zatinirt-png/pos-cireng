@@ -1,24 +1,23 @@
-﻿import React, { useState } from "react";
-
+﻿import React, { Suspense, lazy, useState } from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
-
-import CashierLogin from "./pages/CashierLogin.jsx";
-import CashierPOS from "./pages/CashierPOS.jsx";
 import logo from "./assets/cbur-logo.png";
-
-import AdminLogin from "./pages/AdminLogin.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
-import AdminProducts from "./pages/AdminProducts";
-import AdminPromos from "./pages/AdminPromos";
-import AdminUsers from "./pages/AdminUsers";
-import AdminCarts from "./pages/AdminCarts";
-import AdminReports from "./pages/AdminReports";
-import AdminInventory from "./pages/AdminInventory";
-import PartnerLogin from "./pages/PartnerLogin";
-import PartnerDashboard from "./pages/PartnerDashboard";
-
 import LoginGate from "./pages/LoginGate";
 import SideNav from "./components/SideNav";
+
+const CashierLogin = lazy(() => import("./pages/CashierLogin.jsx"));
+const CashierPOS = lazy(() => import("./pages/CashierPOS.jsx"));
+
+const AdminLogin = lazy(() => import("./pages/AdminLogin.jsx"));
+const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
+const AdminProducts = lazy(() => import("./pages/AdminProducts"));
+const AdminPromos = lazy(() => import("./pages/AdminPromos"));
+const AdminUsers = lazy(() => import("./pages/AdminUsers"));
+const AdminCarts = lazy(() => import("./pages/AdminCarts"));
+const AdminReports = lazy(() => import("./pages/AdminReports"));
+const AdminInventory = lazy(() => import("./pages/AdminInventory"));
+
+const PartnerLogin = lazy(() => import("./pages/PartnerLogin"));
+const PartnerDashboard = lazy(() => import("./pages/PartnerDashboard"));
 
 function Topbar({ menuOpen, onToggleMenu }) {
   const loc = useLocation();
@@ -51,7 +50,6 @@ function Topbar({ menuOpen, onToggleMenu }) {
         )}
       </div>
 
-      {/* ✅ Kanan: burger + logo */}
       <div className="topbar-right">
         <button
           type="button"
@@ -62,14 +60,14 @@ function Topbar({ menuOpen, onToggleMenu }) {
         >
           <span className="topbar-menu-icon" />
         </button>
-
-        
       </div>
     </div>
   );
 }
 
-
+function RouteLoading() {
+  return <div className="container">Loading...</div>;
+}
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -83,27 +81,28 @@ export default function App() {
 
       <SideNav open={menuOpen} setOpen={setMenuOpen} />
 
-      <Routes>
-        <Route path="/" element={<LoginGate />} />
+      <Suspense fallback={<RouteLoading />}>
+        <Routes>
+          <Route path="/" element={<LoginGate />} />
 
-        <Route path="/cashier" element={<CashierLogin />} />
-        <Route path="/cashier/pos" element={<CashierPOS />} />
+          <Route path="/cashier" element={<CashierLogin />} />
+          <Route path="/cashier/pos" element={<CashierPOS />} />
 
-        <Route path="/admin" element={<AdminLogin />} />
-        <Route path="/admin/dashboard" element={<Dashboard />} />
+          <Route path="/admin" element={<AdminLogin />} />
+          <Route path="/admin/dashboard" element={<Dashboard />} />
 
-        <Route path="/admin/products" element={<AdminProducts />} />
-        <Route path="/admin/promos" element={<AdminPromos />} />
-        <Route path="/admin/users" element={<AdminUsers />} />
-        <Route path="/admin/carts" element={<AdminCarts />} />
-        <Route path="/admin/reports" element={<AdminReports />} />
-        <Route path="/admin/inventory" element={<AdminInventory />} />
-        <Route path="/partner" element={<PartnerLogin />} />
-        <Route path="/partner/dashboard" element={<PartnerDashboard />} />
+          <Route path="/admin/products" element={<AdminProducts />} />
+          <Route path="/admin/promos" element={<AdminPromos />} />
+          <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/carts" element={<AdminCarts />} />
+          <Route path="/admin/reports" element={<AdminReports />} />
+          <Route path="/admin/inventory" element={<AdminInventory />} />
+          <Route path="/partner" element={<PartnerLogin />} />
+          <Route path="/partner/dashboard" element={<PartnerDashboard />} />
 
-        <Route path="*" element={<div className="container">404</div>} />
-      </Routes>
+          <Route path="*" element={<div className="container">404</div>} />
+        </Routes>
+      </Suspense>
     </>
   );
 }
-
