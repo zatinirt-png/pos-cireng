@@ -26,6 +26,128 @@ function isCoreStockName(name) {
   return n === "cireng";
 }
 
+function buildPromoPreview({ promos = [], selectedPromoIds = [], gross = 0, products = [] }) {
+  const safeGross = Math.max(0, Number(gross || 0));
+  const selectedIds = Array.isArray(selectedPromoIds) ? selectedPromoIds.filter(Boolean) : [];
+
+  if (!selectedIds.length || !Array.isArray(promos) || promos.length === 0) {
+    return {
+      discountTotal: 0,
+      discountBreakdown: [],
+      bonusItems: [],
+      appliedPromoIds: [],
+      skippedPromos: [],
+    };
+  }
+
+  const promoMap = new Map(promos.map((p) => [p.id, p]));
+  const productMap = new Map((products || []).map((p) => [p.id, p]));
+
+  let discountTotal = 0;
+  const discountBreakdown = [];
+  const bonusBucket = new Map();
+  const appliedPromoIds = [];
+  const skippedPromos = [];
+
+  for (const promoId of selectedIds) {
+    const promo = promoMap.get(promoId);
+    if (!promo || promo.isActive === false) continue;
+
+    const minSubtotal = Math.max(0, Number(promo.minSubtotal || 0));
+    if (safeGross < minSubtotal) {
+      skippedPromos.push({
+        id: promo.id,
+        name: promo.name,
+        reason: `Minimal subtotal ${rupiah(minSubtotal)}`,
+      });
+      continue;
+    }
+
+    appliedPromoIds.push(promo.id);
+
+    if (promo.type === "DISCOUNT_PERCENT") {
+      const pct = Number(promo.discountPercent || 0);
+      if (Number.isFinite(pct) && pct > 0) {
+        const amount = Math.floor((safeGross * pct) / 100);
+        discountTotal += amount;
+        discountBreakdown.push({
+          id: promo.id,
+          name: promo.name,
+          label: `${Number(pct)}%`,
+          amount,
+          type: promo.type,
+        });
+      }
+      continue;
+    }
+
+    if (promo.type === "DISCOUNT_AMOUNT") {
+      const amount = Math.round(Number(promo.discountAmount || 0));
+      if (Number.isFinite(amount) && amount > 0) {
+        discountTotal += amount;
+        discountBreakdown.push({
+          id: promo.id,
+          name: promo.name,
+          label: rupiah(amount),
+          amount,
+          type: promo.type,
+        });
+      }
+      continue;
+    }
+
+    if (promo.type === "BONUS_ITEM") {
+      const qty = Math.round(Number(promo.bonusQty || 0));
+      if (!promo.bonusProductId || qty <= 0) continue;
+
+      const portion = promo.bonusPortion === "LARGE" ? "LARGE" : "SMALL";
+      const key = `${promo.bonusProductId}:${portion}`;
+      const product = productMap.get(promo.bonusProductId);
+
+      const current = bonusBucket.get(key) || {
+        key,
+        productId: promo.bonusProductId,
+        name: product?.name || "(Produk Bonus)",
+        portion,
+        qty: 0,
+        price: 0,
+        subtotal: 0,
+        promoNames: [],
+      };
+
+      current.qty += qty;
+      current.promoNames = [...current.promoNames, promo.name].filter(Boolean);
+      bonusBucket.set(key, current);
+    }
+  }
+
+  return {
+    discountTotal: Math.max(0, Math.round(discountTotal)),
+    discountBreakdown,
+    bonusItems: Array.from(bonusBucket.values()),
+    appliedPromoIds,
+    skippedPromos,
+  };
+}
+
+function promoSummaryText(promo, productsMap = new Map()) {
+  if (!promo) return "-";
+  const minText = `Min ${rupiah(promo.minSubtotal || 0)}`;
+
+  if (promo.type === "DISCOUNT_PERCENT") {
+    return `Diskon ${promo.discountPercent || 0}% (${minText})`;
+  }
+
+  if (promo.type === "DISCOUNT_AMOUNT") {
+    return `Potongan ${rupiah(promo.discountAmount || 0)} (${minText})`;
+  }
+
+  const bonusProduct = productsMap.get(promo.bonusProductId);
+  const bonusName = bonusProduct?.name || "Produk bonus";
+  const bonusPortion = promo.bonusPortion === "LARGE" ? "LARGE" : "SMALL";
+  return `Gratis ${bonusName} x${promo.bonusQty || 0} • ${bonusPortion} (${minText})`;
+}
+
 export default function CashierPOS() {
   const nav = useNavigate();
 
@@ -46,7 +168,7 @@ export default function CashierPOS() {
     const promos = (metaObj?.promos || [])
       .map(
         (p) =>
-          `${p.id}:${p.type}:${p.isActive}:${p.discountPercent}:${p.bonusProductId}:${p.bonusQty}:${p.startAt}:${p.endAt}`
+          `${p.id}:${p.type}:${p.isActive}:${p.minSubtotal}:${p.discountPercent}:${p.discountAmount}:${p.bonusProductId}:${p.bonusPortion}:${p.bonusQty}:${p.startAt}:${p.endAt}`
       )
       .join("|");
 
@@ -315,25 +437,42 @@ export default function CashierPOS() {
     [cart]
   );
 
-  const promoDiscount = useMemo(() => {
-    const promos = meta?.promos || [];
-    if (!promos.length || !promoIds.length) return 0;
+  const promoProductsMap = useMemo(() => {
+    const m = new Map();
+    (meta?.products || []).forEach((p) => m.set(p.id, p));
+    return m;
+  }, [meta]);
 
-    let disc = 0;
-    for (const id of promoIds) {
-      const p = promos.find((x) => x.id === id);
-      if (!p) continue;
-      if (p.type === "DISCOUNT_PERCENT") {
-        const pct = Number(p.discountPercent || 0);
-        if (pct > 0) disc += Math.floor((grossTotal * pct) / 100);
-      }
-    }
-    return disc;
-  }, [meta, promoIds, grossTotal]);
+  const cartPromoPreview = useMemo(
+    () =>
+      buildPromoPreview({
+        promos: meta?.promos || [],
+        selectedPromoIds: promoIds,
+        gross: grossTotal,
+        products: meta?.products || [],
+      }),
+    [meta, promoIds, grossTotal]
+  );
+
+  const checkoutPromoPreview = useMemo(
+    () =>
+      buildPromoPreview({
+        promos: meta?.promos || [],
+        selectedPromoIds: checkout.promoIds || [],
+        gross: Number(openOrder?.grossTotal || 0),
+        products: meta?.products || [],
+      }),
+    [meta, checkout.promoIds, openOrder]
+  );
+
+  const promoDiscount = useMemo(
+    () => Number(cartPromoPreview.discountTotal || 0),
+    [cartPromoPreview]
+  );
 
   const totalDiscount = useMemo(
-    () => Number(discount || 0) + promoDiscount,
-    [discount, promoDiscount]
+    () => Number(discount || 0) + Number(cartPromoPreview.discountTotal || 0),
+    [discount, cartPromoPreview]
   );
 
   const netTotal = useMemo(
@@ -628,32 +767,18 @@ export default function CashierPOS() {
     }));
   }
 
-  const checkoutPromoDiscount = useMemo(() => {
-    if (!openOrder) return 0;
-    const gross = Number(openOrder.grossTotal || 0);
-    const promos = meta?.promos || [];
-    const ids = checkout.promoIds || [];
-    if (!promos.length || !ids.length) return 0;
-
-    let disc = 0;
-    for (const id of ids) {
-      const p = promos.find((x) => x.id === id);
-      if (!p) continue;
-      if (p.type === "DISCOUNT_PERCENT") {
-        const pct = Number(p.discountPercent || 0);
-        if (pct > 0) disc += Math.floor((gross * pct) / 100);
-      }
-    }
-    return disc;
-  }, [openOrder, meta, checkout.promoIds]);
+  const checkoutPromoDiscount = useMemo(
+    () => Number(checkoutPromoPreview.discountTotal || 0),
+    [checkoutPromoPreview]
+  );
 
   const checkoutNetTotal = useMemo(() => {
     if (!openOrder) return 0;
     const gross = Number(openOrder.grossTotal || 0);
     const md = Number(checkout.manualDiscount || 0);
-    const totalDisc = md + checkoutPromoDiscount;
+    const totalDisc = md + Number(checkoutPromoPreview.discountTotal || 0);
     return Math.max(0, gross - totalDisc);
-  }, [openOrder, checkout.manualDiscount, checkoutPromoDiscount]);
+  }, [openOrder, checkout.manualDiscount, checkoutPromoPreview]);
 
   // ===== ORDER EDIT HELPERS =====
   const activeProducts = useMemo(() => {
@@ -1339,9 +1464,7 @@ async function saveOrderEdits(orderId) {
                                   </div>
 
                                   <small className="muted">
-                                    {p.type === "DISCOUNT_PERCENT"
-                                      ? `Diskon ${p.discountPercent || 0}% (Min ${rupiah(p.minSubtotal || 0)})`
-                                      : `Bonus x${p.bonusQty || 0} (Min ${rupiah(p.minSubtotal || 0)})`}
+                                    {promoSummaryText(p, promoProductsMap)}
                                   </small>
 
                                   <div className="prod-actions">
@@ -1503,6 +1626,78 @@ async function saveOrderEdits(orderId) {
 
                         <div className="hr" />
 
+                        <div className="hr" />
+
+                          <div className="pos-section">
+                            <div className="pos-section-head">
+                              <h3 className="pos-h3">Preview Promo</h3>
+                              <span className="muted">Diskon dan bonus item yang akan ikut saat transaksi langsung.</span>
+                            </div>
+
+                            {!promoIds.length ? (
+                              <div className="muted">Belum ada promo dipilih.</div>
+                            ) : (
+                              <>
+                                {cartPromoPreview.discountBreakdown.length > 0 ? (
+                                  <div style={{ display: "grid", gap: 8 }}>
+                                    {cartPromoPreview.discountBreakdown.map((row) => (
+                                      <div
+                                        key={row.id}
+                                        className="pill pill--soft"
+                                        style={{ justifyContent: "space-between", display: "flex", gap: 10, flexWrap: "wrap" }}
+                                      >
+                                        <span><b>{row.name}</b> • {row.label}</span>
+                                        <span>- {rupiah(row.amount)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
+
+                                {cartPromoPreview.bonusItems.length > 0 ? (
+                                  <div className="table-wrap table-wrap--mobile" style={{ marginTop: 10 }}>
+                                    <table className="table table--mobile">
+                                      <thead>
+                                        <tr>
+                                          <th>Bonus Item</th>
+                                          <th style={{ width: 90 }}>Portion</th>
+                                          <th style={{ width: 90 }}>Qty</th>
+                                          <th style={{ width: 140 }}>Harga</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {cartPromoPreview.bonusItems.map((it) => (
+                                          <tr key={it.key}>
+                                            <td data-label="Bonus Item">
+                                              <b>{it.name}</b>
+                                              <div className="muted" style={{ fontSize: 12 }}>
+                                                Promo: {it.promoNames.join(", ")}
+                                              </div>
+                                            </td>
+                                            <td data-label="Portion">
+                                              <span className="badge badge--neutral">{it.portion}</span>
+                                            </td>
+                                            <td data-label="Qty">{it.qty}</td>
+                                            <td data-label="Harga"><b>GRATIS</b></td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                ) : null}
+
+                                {cartPromoPreview.skippedPromos.length > 0 ? (
+                                  <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                                    {cartPromoPreview.skippedPromos.map((row) => (
+                                      <div key={row.id} className="toast toast--danger" style={{ marginBottom: 0 }}>
+                                        <b>{row.name}</b> belum aktif di transaksi ini — {row.reason}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </>
+                            )}
+                          </div>
+
                         {/* ENQUEUE */}
                         <div className="pos-section">
                           <div className="pos-section-head">
@@ -1537,8 +1732,7 @@ async function saveOrderEdits(orderId) {
                         <div className="hr" />
 
                         {/* CHECKOUT DIRECT */}
-                        <div className="pos-section">
-                      
+                        <div className="pos-section">                 
 
                           
 
@@ -1546,11 +1740,18 @@ async function saveOrderEdits(orderId) {
 
                           <div className="pos-totalbar">
                             <div>
-                              <div className="muted">Total</div>
+                              <div className="muted">Gross</div>
+                              <div><b>{rupiah(grossTotal)}</b></div>
+
+                              <div className="muted" style={{ marginTop: 6 }}>Diskon Manual</div>
+                              <div><b>- {rupiah(Number(discount || 0))}</b></div>
+
+                              <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
+                              <div><b>- {rupiah(Number(cartPromoPreview.discountTotal || 0))}</b></div>
+
+                              <div className="muted" style={{ marginTop: 6 }}>Total</div>
                               <div className="pos-total">{rupiah(netTotal)}</div>
                             </div>
-
-                            
                           </div>
                         </div>
                       </>
@@ -2298,7 +2499,89 @@ async function saveOrderEdits(orderId) {
                       </div>
                     ) : null}
 
-                    {/* ✅ Payment Method Dropdown (Checkout Order Modal) */}
+                    <div className="pos-section" style={{ marginBottom: 12 }}>
+                      <div className="pos-section-head">
+                        <h3 className="pos-h3">Promo Checkout</h3>
+                        <span className="muted">Promo diterapkan saat order ini diselesaikan.</span>
+                      </div>
+
+                      <div className="grid-products">
+                        {(meta?.promos || []).map((p) => {
+                          const active = (checkout.promoIds || []).includes(p.id);
+                          const minSubtotal = Number(p.minSubtotal || 0);
+                          const meetsMin = Number(openOrder?.grossTotal || 0) >= minSubtotal;
+
+                          return (
+                            <div key={p.id} className={`prod ${!meetsMin ? "prod--disabled" : ""}`}>
+                              <div className="prod-head">
+                                <b className="prod-title">{p.name}</b>
+                                {active ? (
+                                  <span className="pill pill--ok">Dipakai</span>
+                                ) : (
+                                  <span className="pill pill--neutral">Opsional</span>
+                                )}
+                              </div>
+
+                              <small className="muted">{promoSummaryText(p, promoProductsMap)}</small>
+
+                              {!meetsMin ? (
+                                <small className="muted" style={{ display: "block", marginTop: 6 }}>
+                                  Belum memenuhi minimum subtotal.
+                                </small>
+                              ) : null}
+
+                              <div className="prod-actions">
+                                <button
+                                  className={active ? "btn" : "btn secondary"}
+                                  type="button"
+                                  onClick={() => toggleCheckoutPromo(p.id)}
+                                  disabled={checkoutBusy}
+                                >
+                                  {active ? "Dipakai" : "Pakai"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {(!meta?.promos || meta.promos.length === 0) && (
+                          <div className="muted">Belum ada promo aktif.</div>
+                        )}
+                      </div>
+
+                      {checkoutPromoPreview.bonusItems.length > 0 ? (
+                        <div className="table-wrap table-wrap--mobile" style={{ marginTop: 12 }}>
+                          <table className="table table--mobile">
+                            <thead>
+                              <tr>
+                                <th>Bonus Item</th>
+                                <th style={{ width: 90 }}>Portion</th>
+                                <th style={{ width: 90 }}>Qty</th>
+                                <th style={{ width: 140 }}>Harga</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {checkoutPromoPreview.bonusItems.map((it) => (
+                                <tr key={it.key}>
+                                  <td data-label="Bonus Item">
+                                    <b>{it.name}</b>
+                                    <div className="muted" style={{ fontSize: 12 }}>
+                                      Promo: {it.promoNames.join(", ")}
+                                    </div>
+                                  </td>
+                                  <td data-label="Portion">
+                                    <span className="badge badge--neutral">{it.portion}</span>
+                                  </td>
+                                  <td data-label="Qty">{it.qty}</td>
+                                  <td data-label="Harga"><b>GRATIS</b></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : null}
+                    </div>
+
                     <div className="pos-form" style={{ marginBottom: 12 }}>
                       <div className="row">
                         <div className="col">
@@ -2322,6 +2605,13 @@ async function saveOrderEdits(orderId) {
                       <div className="modal-totals">
                         <div className="muted">Gross</div>
                         <div><b>{rupiah(openOrder.grossTotal || 0)}</b></div>
+
+                        <div className="muted" style={{ marginTop: 6 }}>Diskon Manual</div>
+                        <div><b>- {rupiah(Number(checkout.manualDiscount || 0))}</b></div>
+
+                        <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
+                        <div><b>- {rupiah(Number(checkoutPromoPreview.discountTotal || 0))}</b></div>
+
                         <div className="muted" style={{ marginTop: 6 }}>Net</div>
                         <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
                       </div>
