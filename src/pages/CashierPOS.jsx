@@ -148,6 +148,35 @@ function promoSummaryText(promo, productsMap = new Map()) {
   return `Gratis ${bonusName} x${promo.bonusQty || 0} • ${bonusPortion} (${minText})`;
 }
 
+function getChannelLabel(channel) {
+  return channel === "GOJEK" ? "Gojek" : "Regular";
+}
+
+function getChannelProducts(meta, channel) {
+  if (channel === "GOJEK") {
+    return meta?.gojekProducts || meta?.products || [];
+  }
+  return meta?.regularProducts || meta?.products || [];
+}
+
+function getChannelPromos(meta, channel) {
+  if (channel === "GOJEK") {
+    return meta?.gojekPromos || meta?.promos || [];
+  }
+  return meta?.regularPromos || meta?.promos || [];
+}
+
+function getChannelFeePercent(meta, channel) {
+  if (channel === "GOJEK") return Number(meta?.gojekFeePercent || 21.09);
+  return 0;
+}
+
+function calcChannelFee(amount, percent) {
+  const base = Math.max(0, Number(amount || 0));
+  const pct = Math.max(0, Number(percent || 0));
+  return Math.floor((base * pct) / 100);
+}
+
 export default function CashierPOS() {
   const nav = useNavigate();
 
@@ -161,14 +190,17 @@ export default function CashierPOS() {
   const metaSigRef = useRef("");
 
   function computeMetaSig(metaObj) {
-    const products = (metaObj?.products || [])
-      .map((p) => `${p.id}:${p.priceSmall}:${p.priceLarge}:${p.isActive ?? ""}`)
-      .join("|");
-
-    const promos = (metaObj?.promos || [])
+    const products = (metaObj?.allProducts || metaObj?.products || [])
       .map(
         (p) =>
-          `${p.id}:${p.type}:${p.isActive}:${p.minSubtotal}:${p.discountPercent}:${p.discountAmount}:${p.bonusProductId}:${p.bonusPortion}:${p.bonusQty}:${p.startAt}:${p.endAt}`
+          `${p.id}:${p.priceSmall}:${p.priceLarge}:${p.isActive ?? ""}:${p.salesChannel || "ALL"}`
+      )
+      .join("|");
+
+    const promos = (metaObj?.allPromos || metaObj?.promos || [])
+      .map(
+        (p) =>
+          `${p.id}:${p.type}:${p.isActive}:${p.salesChannel || "ALL"}:${p.minSubtotal}:${p.discountPercent}:${p.discountAmount}:${p.bonusProductId}:${p.bonusPortion}:${p.bonusQty}:${p.startAt}:${p.endAt}`
       )
       .join("|");
 
@@ -225,14 +257,32 @@ export default function CashierPOS() {
   const [openStockQty, setOpenStockQty] = useState({});
 
   // ===== CART + SALE =====
-  const [cart, setCart] = useState([]);
-  const [promoIds, setPromoIds] = useState([]);
-  const [discount, setDiscount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState("");
-  const [note, setNote] = useState("");
+  const [cartByChannel, setCartByChannel] = useState({
+    REGULAR: [],
+    GOJEK: [],
+  });
+  const [promoIdsByChannel, setPromoIdsByChannel] = useState({
+    REGULAR: [],
+    GOJEK: [],
+  });
+  const [discountByChannel, setDiscountByChannel] = useState({
+    REGULAR: 0,
+    GOJEK: 0,
+  });
+  const [paymentMethodByChannel, setPaymentMethodByChannel] = useState({
+    REGULAR: "CASH",
+    GOJEK: "QRIS",
+  });
+  const [noteByChannel, setNoteByChannel] = useState({
+    REGULAR: "",
+    GOJEK: "",
+  });
 
   // ===== QUEUE =====
-  const [customerName, setCustomerName] = useState("");
+  const [customerNameByChannel, setCustomerNameByChannel] = useState({
+    REGULAR: "",
+    GOJEK: "",
+  });
   const [queue, setQueue] = useState([]);
   const [qErr, setQErr] = useState("");
   const [qLoading, setQLoading] = useState(false);
@@ -266,8 +316,100 @@ export default function CashierPOS() {
   const [booting, setBooting] = useState(true);
 
   // ===== POS TABS =====
-  const [mainTab, setMainTab] = useState("SELL"); // SELL | CASH | SHIFT | STOCK
+  const [mainTab, setMainTab] = useState("SELL"); // SELL | GOJEK | CASH | SHIFT | STOCK
   const [cashTab, setCashTab] = useState("ALL"); // ALL | CASH_IN | CASH_OUT
+
+  const activeSalesChannel = mainTab === "GOJEK" ? "GOJEK" : "REGULAR";
+  const activeChannelLabel = getChannelLabel(activeSalesChannel);
+
+  const activeCart = cartByChannel[activeSalesChannel] || [];
+  const activePromoIds = promoIdsByChannel[activeSalesChannel] || [];
+  const activeDiscount = Number(discountByChannel[activeSalesChannel] || 0);
+  const activePaymentMethod =
+    paymentMethodByChannel[activeSalesChannel] ||
+    (activeSalesChannel === "GOJEK" ? "QRIS" : "CASH");
+  const activeNote = noteByChannel[activeSalesChannel] || "";
+  const activeCustomerName = customerNameByChannel[activeSalesChannel] || "";
+
+  const activeMetaProducts = getChannelProducts(meta, activeSalesChannel);
+  const activeMetaPromos = getChannelPromos(meta, activeSalesChannel);
+  const activeFeePercent = getChannelFeePercent(meta, activeSalesChannel);
+
+  // ===== compatibility bridge for old refs =====
+  const cart = activeCart;
+  const promoIds = activePromoIds;
+  const discount = activeDiscount;
+  const paymentMethod = activePaymentMethod;
+  const note = activeNote;
+  const customerName = activeCustomerName;
+
+  const setCart = (valueOrFn) => {
+    setCartByChannel((prev) => {
+      const curr = prev[activeSalesChannel] || [];
+      const next = typeof valueOrFn === "function" ? valueOrFn(curr) : valueOrFn;
+      return {
+        ...prev,
+        [activeSalesChannel]: Array.isArray(next) ? next : [],
+      };
+    });
+  };
+
+  const setPromoIds = (valueOrFn) => {
+    setPromoIdsByChannel((prev) => {
+      const curr = prev[activeSalesChannel] || [];
+      const next = typeof valueOrFn === "function" ? valueOrFn(curr) : valueOrFn;
+      return {
+        ...prev,
+        [activeSalesChannel]: Array.isArray(next) ? next : [],
+      };
+    });
+  };
+
+  const setDiscount = (valueOrFn) => {
+    setDiscountByChannel((prev) => {
+      const curr = Number(prev[activeSalesChannel] || 0);
+      const next = typeof valueOrFn === "function" ? valueOrFn(curr) : valueOrFn;
+      return {
+        ...prev,
+        [activeSalesChannel]: Number(next || 0),
+      };
+    });
+  };
+
+  const setPaymentMethod = (valueOrFn) => {
+    setPaymentMethodByChannel((prev) => {
+      const curr =
+        prev[activeSalesChannel] ||
+        (activeSalesChannel === "GOJEK" ? "QRIS" : "CASH");
+      const next = typeof valueOrFn === "function" ? valueOrFn(curr) : valueOrFn;
+      return {
+        ...prev,
+        [activeSalesChannel]: next || (activeSalesChannel === "GOJEK" ? "QRIS" : "CASH"),
+      };
+    });
+  };
+
+  const setNote = (valueOrFn) => {
+    setNoteByChannel((prev) => {
+      const curr = prev[activeSalesChannel] || "";
+      const next = typeof valueOrFn === "function" ? valueOrFn(curr) : valueOrFn;
+      return {
+        ...prev,
+        [activeSalesChannel]: String(next || ""),
+      };
+    });
+  };
+
+  const setCustomerName = (valueOrFn) => {
+    setCustomerNameByChannel((prev) => {
+      const curr = prev[activeSalesChannel] || "";
+      const next = typeof valueOrFn === "function" ? valueOrFn(curr) : valueOrFn;
+      return {
+        ...prev,
+        [activeSalesChannel]: String(next || ""),
+      };
+    });
+  };
 
   // ===== CLOSE SHIFT MODAL =====
   const [closeShiftOpen, setCloseShiftOpen] = useState(false);
@@ -346,7 +488,10 @@ export default function CashierPOS() {
 
       const next = r.orders || [];
       const sig = next
-        .map((o) => `${o.id}:${o.status}:${o.grossTotal}:${o.itemCount}`)
+        .map(
+          (o) =>
+            `${o.id}:${o.salesChannel || "REGULAR"}:${o.status}:${o.grossTotal}:${o.itemCount}`
+        )
         .join("|");
 
       // ✅ kalau sama persis, jangan setState (biar UI nggak “kedip”)
@@ -431,38 +576,74 @@ export default function CashierPOS() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, shift]);
 
+  const regularQueue = useMemo(
+    () => (queue || []).filter((q) => (q.salesChannel || "REGULAR") !== "GOJEK"),
+    [queue]
+  );
+
+  const gojekQueue = useMemo(
+    () => (queue || []).filter((q) => (q.salesChannel || "REGULAR") === "GOJEK"),
+    [queue]
+  );
+
+  const visibleQueueChannel = mainTab === "GOJEK" ? "GOJEK" : "REGULAR";
+  const visibleQueue = useMemo(
+    () => (visibleQueueChannel === "GOJEK" ? gojekQueue : regularQueue),
+    [visibleQueueChannel, gojekQueue, regularQueue]
+  );
+
   // ===== CALC =====
   const grossTotal = useMemo(
-    () => cart.reduce((sum, it) => sum + it.price * it.qty, 0),
-    [cart]
+    () => activeCart.reduce((sum, it) => sum + it.price * it.qty, 0),
+    [activeCart]
   );
 
   const promoProductsMap = useMemo(() => {
     const m = new Map();
-    (meta?.products || []).forEach((p) => m.set(p.id, p));
+    activeMetaProducts.forEach((p) => m.set(p.id, p));
     return m;
-  }, [meta]);
+  }, [activeMetaProducts]);
 
   const cartPromoPreview = useMemo(
     () =>
       buildPromoPreview({
-        promos: meta?.promos || [],
-        selectedPromoIds: promoIds,
+        promos: activeMetaPromos,
+        selectedPromoIds: activePromoIds,
         gross: grossTotal,
-        products: meta?.products || [],
+        products: activeMetaProducts,
       }),
-    [meta, promoIds, grossTotal]
+    [activeMetaPromos, activePromoIds, grossTotal, activeMetaProducts]
   );
+
+  const checkoutChannel = openOrder?.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR";
+  const checkoutMetaProducts = useMemo(
+    () => getChannelProducts(meta, checkoutChannel),
+    [meta, checkoutChannel]
+  );
+  const checkoutMetaPromos = useMemo(
+    () => getChannelPromos(meta, checkoutChannel),
+    [meta, checkoutChannel]
+  );
+  const checkoutFeePercent = useMemo(
+    () => getChannelFeePercent(meta, checkoutChannel),
+    [meta, checkoutChannel]
+  );
+
+  const checkoutPromoProductsMap = useMemo(() => {
+    const m = new Map();
+    checkoutMetaProducts.forEach((p) => m.set(p.id, p));
+    return m;
+  }, [checkoutMetaProducts]);
 
   const checkoutPromoPreview = useMemo(
     () =>
       buildPromoPreview({
-        promos: meta?.promos || [],
+        promos: checkoutMetaPromos,
         selectedPromoIds: checkout.promoIds || [],
         gross: Number(openOrder?.grossTotal || 0),
-        products: meta?.products || [],
+        products: checkoutMetaProducts,
       }),
-    [meta, checkout.promoIds, openOrder]
+    [checkoutMetaPromos, checkout.promoIds, openOrder, checkoutMetaProducts]
   );
 
   const promoDiscount = useMemo(
@@ -471,13 +652,23 @@ export default function CashierPOS() {
   );
 
   const totalDiscount = useMemo(
-    () => Number(discount || 0) + Number(cartPromoPreview.discountTotal || 0),
-    [discount, cartPromoPreview]
+    () => Number(activeDiscount || 0) + Number(cartPromoPreview.discountTotal || 0),
+    [activeDiscount, cartPromoPreview]
   );
 
   const netTotal = useMemo(
     () => Math.max(0, grossTotal - totalDiscount),
     [grossTotal, totalDiscount]
+  );
+
+  const platformFeeAmount = useMemo(
+    () => calcChannelFee(netTotal, activeFeePercent),
+    [netTotal, activeFeePercent]
+  );
+
+  const netAfterPlatformFee = useMemo(
+    () => Math.max(0, netTotal - platformFeeAmount),
+    [netTotal, platformFeeAmount]
   );
 
   // ===== CART OPS =====
@@ -487,49 +678,70 @@ export default function CashierPOS() {
     const unitPrice = portion === "LARGE" ? p.priceLarge : p.priceSmall;
     const key = `${p.id}:${portion}`;
 
-    setCart((prev) => {
-      const found = prev.find((x) => x.key === key);
-      if (found)
-        return prev.map((x) => (x.key === key ? { ...x, qty: x.qty + 1 } : x));
-      return [
-        ...prev,
-        {
-          key,
-          productId: p.id,
-          portion,
-          name: p.name,
-          price: unitPrice,
-          qty: 1,
-          itemNote: "",
-        },
-      ];
+    setCartByChannel((prev) => {
+      const curr = prev[activeSalesChannel] || [];
+      const found = curr.find((x) => x.key === key);
+      const next = found
+        ? curr.map((x) => (x.key === key ? { ...x, qty: x.qty + 1 } : x))
+        : [
+            ...curr,
+            {
+              key,
+              productId: p.id,
+              portion,
+              name: p.name,
+              price: unitPrice,
+              qty: 1,
+              itemNote: "",
+            },
+          ];
+
+      return { ...prev, [activeSalesChannel]: next };
     });
   }
 
   function updateQty(key, delta) {
-  setCart((prev) => {
-    const curr = prev.find((x) => x.key === key);
-    if (!curr) return prev;
+    setCartByChannel((prev) => {
+      const curr = prev[activeSalesChannel] || [];
+      const row = curr.find((x) => x.key === key);
+      if (!row) return prev;
 
-    const nextQty = Number(curr.qty || 0) + Number(delta || 0);
+      const nextQty = Number(row.qty || 0) + Number(delta || 0);
+      const next =
+        !Number.isFinite(nextQty) || nextQty <= 0
+          ? curr.filter((x) => x.key !== key)
+          : curr.map((x) => (x.key === key ? { ...x, qty: nextQty } : x));
 
-    // ✅ kalau qty <= 0, item langsung hilang (tanpa refresh)
-    if (!Number.isFinite(nextQty) || nextQty <= 0) {
-      return prev.filter((x) => x.key !== key);
-    }
-
-    return prev.map((x) => (x.key === key ? { ...x, qty: nextQty } : x));
-  });
-}
+      return { ...prev, [activeSalesChannel]: next };
+    });
+  }
 
   function removeItem(key) {
-    setCart((prev) => prev.filter((x) => x.key !== key));
+    setCartByChannel((prev) => ({
+      ...prev,
+      [activeSalesChannel]: (prev[activeSalesChannel] || []).filter((x) => x.key !== key),
+    }));
+  }
+
+  function updateCartItemNote(key, value) {
+    setCartByChannel((prev) => ({
+      ...prev,
+      [activeSalesChannel]: (prev[activeSalesChannel] || []).map((x) =>
+        x.key === key ? { ...x, itemNote: value } : x
+      ),
+    }));
   }
 
   function togglePromo(id) {
-    setPromoIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+    setPromoIdsByChannel((prev) => {
+      const curr = prev[activeSalesChannel] || [];
+      return {
+        ...prev,
+        [activeSalesChannel]: curr.includes(id)
+          ? curr.filter((x) => x !== id)
+          : [...curr, id],
+      };
+    });
   }
 
   async function loadOpeningStocks({ preserve = false } = {}) {
@@ -633,12 +845,12 @@ export default function CashierPOS() {
       setShift(null);
       setSummary(null);
       setMovements([]);
-      setCart([]);
-      setPromoIds([]);
-      setCustomerName("");
-      setDiscount(0);
-      setPaymentMethod("CASH");
-      setNote("");
+      setCartByChannel({ REGULAR: [], GOJEK: [] });
+      setPromoIdsByChannel({ REGULAR: [], GOJEK: [] });
+      setCustomerNameByChannel({ REGULAR: "", GOJEK: "" });
+      setDiscountByChannel({ REGULAR: 0, GOJEK: 0 });
+      setPaymentMethodByChannel({ REGULAR: "CASH", GOJEK: "QRIS" });
+      setNoteByChannel({ REGULAR: "", GOJEK: "" });
       setClosingCash(0);
 
       if (expected == null) {
@@ -672,20 +884,23 @@ export default function CashierPOS() {
     setMsg("");
     try {
       if (!shift) throw new Error("Buka shift dulu.");
-      if (cart.length === 0) throw new Error("Keranjang kosong.");
+      if (activeCart.length === 0) {
+        throw new Error(`Keranjang ${activeChannelLabel} kosong.`);
+      }
 
       const payload = {
-        items: cart.map((x) => ({
+        salesChannel: activeSalesChannel,
+        items: activeCart.map((x) => ({
           productId: x.productId,
           portion: x.portion,
           qty: x.qty,
           itemNote: x.itemNote,
         })),
-        discount: Number(discount || 0),
-        manualDiscount: Number(discount || 0),
-        promoIds,
-        paymentMethod,
-        note,
+        discount: Number(activeDiscount || 0),
+        manualDiscount: Number(activeDiscount || 0),
+        promoIds: activePromoIds,
+        paymentMethod: activePaymentMethod,
+        note: activeNote,
       };
 
       const res = await apiPost("/api/sales", payload, token);
@@ -698,15 +913,24 @@ export default function CashierPOS() {
       setMsg(
         "Transaksi sukses. ID: " +
           res.saleId +
-          " | Total: " +
-          rupiah(res.netTotal)
+          " | Total Customer: " +
+          rupiah(res.netTotal) +
+          (Number(res.platformFeeAmount || 0) > 0
+            ? " | Fee: " +
+              rupiah(res.platformFeeAmount) +
+              " | Bersih Outlet: " +
+              rupiah(res.netAfterPlatformFee)
+            : "")
       );
 
-      setCart([]);
-      setPromoIds([]);
-      setDiscount(0);
-      setPaymentMethod("CASH");
-      setNote("");
+      setCartByChannel((prev) => ({ ...prev, [activeSalesChannel]: [] }));
+      setPromoIdsByChannel((prev) => ({ ...prev, [activeSalesChannel]: [] }));
+      setDiscountByChannel((prev) => ({ ...prev, [activeSalesChannel]: 0 }));
+      setPaymentMethodByChannel((prev) => ({
+        ...prev,
+        [activeSalesChannel]: activeSalesChannel === "GOJEK" ? "QRIS" : "CASH",
+      }));
+      setNoteByChannel((prev) => ({ ...prev, [activeSalesChannel]: "" }));
       await loadQueue();
     } catch (e) {
       setErr(e?.message || "Gagal simpan transaksi");
@@ -721,20 +945,24 @@ export default function CashierPOS() {
     setMsg("");
     try {
       if (!shift) throw new Error("Buka shift dulu sebelum buat antrian.");
-      if (cart.length === 0) throw new Error("Keranjang kosong.");
-      const cn = normName(customerName);
+      if (activeCart.length === 0) {
+        throw new Error(`Keranjang ${activeChannelLabel} kosong.`);
+      }
+      const cn = normName(activeCustomerName);
       if (!cn) throw new Error("Nama pelanggan wajib diisi.");
 
       const dup = (queue || []).some(
         (q) =>
+          (q.salesChannel || "REGULAR") === activeSalesChannel &&
           String(q.customerName || "").trim().toLowerCase() === cn.toLowerCase()
       );
       if (dup) throw new Error("Nama pelanggan sudah ada di antrian.");
 
       const payload = {
+        salesChannel: activeSalesChannel,
         customerName: cn,
-        note: note || null,
-        items: cart.map((x) => ({
+        note: activeNote || null,
+        items: activeCart.map((x) => ({
           productId: x.productId,
           portion: x.portion,
           qty: x.qty,
@@ -744,12 +972,15 @@ export default function CashierPOS() {
 
       await apiPost("/api/orders", payload, token);
 
-      setCart([]);
-      setPromoIds([]);
-      setDiscount(0);
-      setPaymentMethod("CASH");
-      setNote("");
-      setCustomerName("");
+      setCartByChannel((prev) => ({ ...prev, [activeSalesChannel]: [] }));
+      setPromoIdsByChannel((prev) => ({ ...prev, [activeSalesChannel]: [] }));
+      setDiscountByChannel((prev) => ({ ...prev, [activeSalesChannel]: 0 }));
+      setPaymentMethodByChannel((prev) => ({
+        ...prev,
+        [activeSalesChannel]: activeSalesChannel === "GOJEK" ? "QRIS" : "CASH",
+      }));
+      setNoteByChannel((prev) => ({ ...prev, [activeSalesChannel]: "" }));
+      setCustomerNameByChannel((prev) => ({ ...prev, [activeSalesChannel]: "" }));
 
       setMsg("Order masuk antrian.");
       await loadQueue();
@@ -780,16 +1011,28 @@ export default function CashierPOS() {
     return Math.max(0, gross - totalDisc);
   }, [openOrder, checkout.manualDiscount, checkoutPromoPreview]);
 
+  const checkoutPlatformFeeAmount = useMemo(
+    () => calcChannelFee(checkoutNetTotal, checkoutFeePercent),
+    [checkoutNetTotal, checkoutFeePercent]
+  );
+
+  const checkoutNetAfterPlatformFee = useMemo(
+    () => Math.max(0, checkoutNetTotal - checkoutPlatformFeeAmount),
+    [checkoutNetTotal, checkoutPlatformFeeAmount]
+  );
+
   // ===== ORDER EDIT HELPERS =====
-  const activeProducts = useMemo(() => {
-    const list = meta?.products || [];
-    return list.filter((p) => p && p.isActive !== false);
-  }, [meta]);
+  const editAvailableProducts = useMemo(() => {
+    const channel = openOrder?.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR";
+    return getChannelProducts(meta, channel).filter((p) => p && p.isActive !== false);
+  }, [meta, openOrder]);
+  const activeProducts = editAvailableProducts;
 
   const productMap = useMemo(() => {
-    const list = meta?.products || [];
+    const channel = openOrder?.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR";
+    const list = getChannelProducts(meta, channel);
     return new Map(list.map((p) => [p.id, p]));
-  }, [meta]);
+  }, [meta, openOrder]);
 
   function buildEditItemsFromOrder(order) {
     const items = order?.items || [];
@@ -829,7 +1072,7 @@ export default function CashierPOS() {
   }
 
   function addEditRow() {
-    const first = activeProducts[0];
+    const first = editAvailableProducts[0];
     if (!first) return;
     setEditItems((prev) => [
       ...prev,
@@ -855,9 +1098,11 @@ export default function CashierPOS() {
     try {
       const r = await apiGet(`/api/orders/${orderId}`, token);
       setOpenOrder(r.order);
+      const orderChannel = r.order?.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR";
+
       setCheckout({
         manualDiscount: 0,
-        paymentMethod: "CASH",
+        paymentMethod: orderChannel === "GOJEK" ? "QRIS" : "CASH",
         note: r.order?.note || "",
         promoIds: [],
       });
@@ -970,13 +1215,18 @@ async function saveOrderEdits(orderId) {
 
       const payload = {
         manualDiscount: Number(checkout.manualDiscount || 0),
-        paymentMethod: checkout.paymentMethod === "QRIS" ? "QRIS" : "CASH",
+        paymentMethod:
+          checkout.paymentMethod === "QRIS"
+            ? "QRIS"
+            : checkout.paymentMethod === "TRANSFER"
+            ? "TRANSFER"
+            : "CASH",
         note: checkout.note || null,
         promoIds: checkout.promoIds || [],
       };
 
-      if (checkout.paymentMethod !== "CASH" && checkout.paymentMethod !== "QRIS") {
-        throw new Error("Pilih metode bayar dulu (CASH / QRIS).");
+      if (!["CASH", "QRIS", "TRANSFER"].includes(checkout.paymentMethod)) {
+        throw new Error("Pilih metode bayar dulu (CASH / QRIS / TRANSFER).");
       }
 
       const res = await apiPost(`/api/orders/${orderId}/checkout`, payload, token);
@@ -993,8 +1243,14 @@ async function saveOrderEdits(orderId) {
       setMsg(
         "Checkout sukses. ID: " +
           res.saleId +
-          " | Total: " +
-          rupiah(res.netTotal)
+          " | Total Customer: " +
+          rupiah(res.netTotal) +
+          (Number(res.platformFeeAmount || 0) > 0
+            ? " | Fee: " +
+              rupiah(res.platformFeeAmount) +
+              " | Bersih Outlet: " +
+              rupiah(res.netAfterPlatformFee)
+            : "")
       );
 
       setModalOpen(false);
@@ -1177,7 +1433,11 @@ async function saveOrderEdits(orderId) {
                   )}
 
                   <span className="pill pill--soft">
-                    Antrian <b>{queue?.length || 0}</b>
+                    Regular <b>{regularQueue.length}</b>
+                  </span>
+
+                  <span className="pill pill--soft">
+                    Gojek <b>{gojekQueue.length}</b>
                   </span>
                 </div>
               </div>
@@ -1419,12 +1679,13 @@ async function saveOrderEdits(orderId) {
                         <h3 className="pos-h3" style={{ margin: 0 }}>
                           Kasir
                         </h3>
-                        <span className="muted">Ringkas: Jualan • Cash • Shift • Stok</span>
+                        <span className="muted">Ringkas: Jualan • Gojek • Cash • Shift • Stok</span>
                       </div>
 
                       <Tabs
                         items={[
                           { value: "SELL", label: "Jualan" },
+                          { value: "GOJEK", label: "Gojek" },
                           { value: "CASH", label: "Cash In/Out" },
                           { value: "SHIFT", label: "Shift" },
                           { value: "STOCK", label: "Stok" },
@@ -1435,19 +1696,19 @@ async function saveOrderEdits(orderId) {
                     </div>
 
                     {/* ===== TAB: SELL ===== */}
-                    {mainTab === "SELL" ? (
+                    {mainTab === "SELL" || mainTab === "GOJEK" ? (
                       <>
                         {/* PROMO */}
                         <div className="pos-section">
                           <div className="pos-section-head">
-                            <h3 className="pos-h3">Promo</h3>
+                            <h3 className="pos-h3">Promo {activeChannelLabel}</h3>
                             <span className="muted">
-                              Pilih promo untuk transaksi langsung / checkout antrian
+                              Pilih promo untuk channel {activeChannelLabel.toUpperCase()}.
                             </span>
                           </div>
 
                           <div className="grid-products">
-                            {(meta?.promos || []).map((p) => {
+                            {activeMetaPromos.map((p) => {
                               const active = promoIds.includes(p.id);
                               return (
                                 <div
@@ -1479,7 +1740,7 @@ async function saveOrderEdits(orderId) {
                                 </div>
                               );
                             })}
-                            {(!meta?.promos || meta.promos.length === 0) && (
+                            {(!activeMetaPromos || activeMetaPromos.length === 0) && (
                               <div className="muted">Belum ada promo aktif.</div>
                             )}
                           </div>
@@ -1490,9 +1751,9 @@ async function saveOrderEdits(orderId) {
                         {/* MENU */}
                         <div className="pos-section">
                           <div className="pos-section-head">
-                            <h3 className="pos-h3">Menu</h3>
+                            <h3 className="pos-h3">Menu {activeChannelLabel}</h3>
                             <span className="muted">
-                              Harga mengikuti gerobak aktif: {cartName}
+                              Harga channel {activeChannelLabel} mengikuti gerobak aktif: {cartName}
                             </span>
                           </div>
 
@@ -1503,7 +1764,7 @@ async function saveOrderEdits(orderId) {
                           ) : null}
 
                           <div className="grid-products">
-                            {meta?.products?.map((p) => (
+                            {activeMetaProducts.map((p) => (
                               <div key={p.id} className="prod">
                                 <b className="prod-title">{p.name}</b>
                                 <small className="muted">
@@ -1541,13 +1802,13 @@ async function saveOrderEdits(orderId) {
                         {/* CART */}
                         <div className="pos-section">
                           <div className="pos-section-head">
-                            <h3 className="pos-h3">Keranjang</h3>
+                            <h3 className="pos-h3">Keranjang {activeChannelLabel}</h3>
                             <span className="muted">
-                              {cart.length ? `${cart.length} item` : "Belum ada item"}
+                              {activeCart.length ? `${activeCart.length} item` : "Belum ada item"}
                             </span>
                           </div>
 
-                          {cart.length === 0 ? (
+                          {activeCart.length === 0 ? (
                             <div className="muted">Belum ada item.</div>
                           ) : (
                             <div className="table-wrap table-wrap--mobile">
@@ -1561,7 +1822,7 @@ async function saveOrderEdits(orderId) {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {cart.map((it) => (
+                                  {activeCart.map((it) => (
                                     <tr key={it.key}>
                                       <td data-label="Item">
                                         <div><b>{it.name}</b></div>
@@ -1570,15 +1831,7 @@ async function saveOrderEdits(orderId) {
                                             className="input"
                                             placeholder="Catatan (level pedas/mix saus)"
                                             value={it.itemNote}
-                                            onChange={(e) =>
-                                              setCart((prev) =>
-                                                prev.map((x) =>
-                                                  x.key === it.key
-                                                    ? { ...x, itemNote: e.target.value }
-                                                    : x
-                                                )
-                                              )
-                                            }
+                                            onChange={(e) => updateCartItemNote(it.key, e.target.value)}
                                           />
                                         </div>
                                       </td>
@@ -1630,11 +1883,11 @@ async function saveOrderEdits(orderId) {
 
                           <div className="pos-section">
                             <div className="pos-section-head">
-                              <h3 className="pos-h3">Preview Promo</h3>
+                              <h3 className="pos-h3">Preview Promo {activeChannelLabel}</h3>
                               <span className="muted">Diskon dan bonus item yang akan ikut saat transaksi langsung.</span>
                             </div>
 
-                            {!promoIds.length ? (
+                            {!activePromoIds.length ? (
                               <div className="muted">Belum ada promo dipilih.</div>
                             ) : (
                               <>
@@ -1701,8 +1954,8 @@ async function saveOrderEdits(orderId) {
                         {/* ENQUEUE */}
                         <div className="pos-section">
                           <div className="pos-section-head">
-                            <h3 className="pos-h3">Tambah ke Antrian</h3>
-                            <span className="muted">Klik pesanan untuk buka detail. Centang "Sudah bayar" dulu sebelum checkout.</span>
+                            <h3 className="pos-h3">Tambah ke Antrian {activeChannelLabel}</h3>
+                            <span className="muted">Input manual order {activeChannelLabel}. Klik pesanan untuk buka detail lalu centang "Sudah bayar" sebelum checkout.</span>
                           </div>
 
                           <div className="pos-form">
@@ -1710,8 +1963,13 @@ async function saveOrderEdits(orderId) {
                               <label>Nama pelanggan (unik)</label>
                               <input
                                 className="input"
-                                value={customerName}
-                                onChange={(e) => setCustomerName(e.target.value)}
+                                value={activeCustomerName}
+                                  onChange={(e) =>
+                                    setCustomerNameByChannel((prev) => ({
+                                      ...prev,
+                                      [activeSalesChannel]: e.target.value,
+                                    }))
+                                  }
                                 placeholder="contoh: Budi / Teh Rina"
                               />
                             </div>
@@ -1721,7 +1979,7 @@ async function saveOrderEdits(orderId) {
                                 className="btn secondary"
                                 type="button"
                                 onClick={enqueueOrder}
-                                disabled={!customerName || cart.length === 0}
+                                disabled={!activeCustomerName || activeCart.length === 0}
                               >
                                 Tambah ke Antrian
                               </button>
@@ -1744,13 +2002,25 @@ async function saveOrderEdits(orderId) {
                               <div><b>{rupiah(grossTotal)}</b></div>
 
                               <div className="muted" style={{ marginTop: 6 }}>Diskon Manual</div>
-                              <div><b>- {rupiah(Number(discount || 0))}</b></div>
+                              <div><b>- {rupiah(Number(activeDiscount || 0))}</b></div>
 
                               <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
                               <div><b>- {rupiah(Number(cartPromoPreview.discountTotal || 0))}</b></div>
 
-                              <div className="muted" style={{ marginTop: 6 }}>Total</div>
-                              <div className="pos-total">{rupiah(netTotal)}</div>
+                              <div className="muted" style={{ marginTop: 6 }}>Total Customer</div>
+                                  <div className="pos-total">{rupiah(netTotal)}</div>
+
+                                  {activeSalesChannel === "GOJEK" ? (
+                                    <>
+                                      <div className="muted" style={{ marginTop: 6 }}>
+                                        Fee Gojek ({Number(activeFeePercent || 0).toFixed(2)}%)
+                                      </div>
+                                      <div><b>- {rupiah(platformFeeAmount)}</b></div>
+
+                                      <div className="muted" style={{ marginTop: 6 }}>Net Outlet</div>
+                                      <div><b>{rupiah(netAfterPlatformFee)}</b></div>
+                                    </>
+                                  ) : null}
                             </div>
                           </div>
                         </div>
@@ -1990,7 +2260,9 @@ async function saveOrderEdits(orderId) {
             <div className="pos-col pos-col--queue">
               <div className="pos-card">
                 <div className="pos-section-head pos-section-head--tight">
-                  <h3 className="pos-h3" style={{ margin: 0 }}>Antrian Pesanan</h3>
+                  <h3 className="pos-h3" style={{ margin: 0 }}>
+                    Antrian {visibleQueueChannel === "GOJEK" ? "Gojek" : "Regular"}
+                  </h3>
 
                   <div className="pos-right-tools" aria-live="polite">
                     {qLoading ? (
@@ -2005,7 +2277,7 @@ async function saveOrderEdits(orderId) {
                 </div>
 
                 <div className="muted" style={{ marginTop: 8 }}>
-                  Pesanan yang sudah masuk antrian belum dibayar. Klik untuk buka & selesaikan.
+                  Pesanan {visibleQueueChannel === "GOJEK" ? "Gojek" : "regular"} yang sudah masuk antrian. Klik untuk buka & selesaikan.
                 </div>
 
                 {qErr ? (
@@ -2014,11 +2286,11 @@ async function saveOrderEdits(orderId) {
 
                 <div className="hr" />
 
-                {!queue.length ? (
+                {!visibleQueue.length ? (
                   <div className="muted">Belum ada antrian.</div>
                 ) : (
                   <div className="queue-list queue-list--hscroll">
-                    {queue.map((o) => (
+                    {visibleQueue.map((o) => (
                       <button
                         key={o.id}
                         type="button"
@@ -2035,6 +2307,9 @@ async function saveOrderEdits(orderId) {
 
                           <div className="queue-right">
                             <div className="queue-sub" style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                              <span className="pill pill--soft">
+                                {o.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR"}
+                              </span>
                               {o.status === "PENDING_PAID" ? (
                                 <span className="pill pill--ok">Sudah bayar</span>
                               ) : (
@@ -2286,7 +2561,7 @@ async function saveOrderEdits(orderId) {
                                           value={row.productId || ""}
                                           onChange={(e) => patchEditRow(row.rowId, { productId: e.target.value })}
                                         >
-                                          {activeProducts.map((p) => (
+                                          {editAvailableProducts.map((p) => (
                                             <option key={p.id} value={p.id}>
                                               {p.name}
                                             </option>
@@ -2429,7 +2704,7 @@ async function saveOrderEdits(orderId) {
                           className="btn"
                           type="button"
                           onClick={() => saveOrderEdits(openOrder.id)}
-                          disabled={editBusy || !activeProducts.length || (editItems || []).length === 0}
+                          disabled={editBusy || !editAvailableProducts.length || (editItems || []).length === 0}
                         >
                           {editBusy ? "Menyimpan…" : "Simpan Perubahan"}
                         </button>
@@ -2506,7 +2781,7 @@ async function saveOrderEdits(orderId) {
                       </div>
 
                       <div className="grid-products">
-                        {(meta?.promos || []).map((p) => {
+                        {checkoutMetaPromos.map((p) => {
                           const active = (checkout.promoIds || []).includes(p.id);
                           const minSubtotal = Number(p.minSubtotal || 0);
                           const meetsMin = Number(openOrder?.grossTotal || 0) >= minSubtotal;
@@ -2522,7 +2797,7 @@ async function saveOrderEdits(orderId) {
                                 )}
                               </div>
 
-                              <small className="muted">{promoSummaryText(p, promoProductsMap)}</small>
+                              <small className="muted">{promoSummaryText(p, checkoutPromoProductsMap)}</small>
 
                               {!meetsMin ? (
                                 <small className="muted" style={{ display: "block", marginTop: 6 }}>
@@ -2544,7 +2819,7 @@ async function saveOrderEdits(orderId) {
                           );
                         })}
 
-                        {(!meta?.promos || meta.promos.length === 0) && (
+                        {(!checkoutMetaPromos || checkoutMetaPromos.length === 0) && (
                           <div className="muted">Belum ada promo aktif.</div>
                         )}
                       </div>
@@ -2596,6 +2871,7 @@ async function saveOrderEdits(orderId) {
                           >
                             <option value="CASH">CASH</option>
                             <option value="QRIS">QRIS</option>
+                            <option value="TRANSFER">TRANSFER</option>
                           </select>
                         </div>
                       </div>
@@ -2612,8 +2888,20 @@ async function saveOrderEdits(orderId) {
                         <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
                         <div><b>- {rupiah(Number(checkoutPromoPreview.discountTotal || 0))}</b></div>
 
-                        <div className="muted" style={{ marginTop: 6 }}>Net</div>
-                        <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
+                        <div className="muted" style={{ marginTop: 6 }}>Total Customer</div>
+                          <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
+
+                          {checkoutChannel === "GOJEK" ? (
+                            <>
+                              <div className="muted" style={{ marginTop: 6 }}>
+                                Fee Gojek ({Number(checkoutFeePercent || 0).toFixed(2)}%)
+                              </div>
+                              <div><b>- {rupiah(checkoutPlatformFeeAmount)}</b></div>
+
+                              <div className="muted" style={{ marginTop: 6 }}>Net Outlet</div>
+                              <div><b>{rupiah(checkoutNetAfterPlatformFee)}</b></div>
+                            </>
+                          ) : null}
                       </div>
 
                       <div className="modal-actions">
@@ -2628,7 +2916,7 @@ async function saveOrderEdits(orderId) {
                             resetEditStateFromOpenOrder();
                             setEditMode(true);
                           }}
-                          disabled={!activeProducts.length}
+                          disabled={!editAvailableProducts.length}
                         >
                           Edit Order
                         </button>
