@@ -651,24 +651,33 @@ export default function CashierPOS() {
     [cartPromoPreview]
   );
 
+  const platformFeeAmount = useMemo(
+    () => calcChannelFee(grossTotal, activeFeePercent),
+    [grossTotal, activeFeePercent]
+  );
+
+  const subtotalAfterPlatformFee = useMemo(
+    () => Math.max(0, grossTotal - platformFeeAmount),
+    [grossTotal, platformFeeAmount]
+  );
+
   const totalDiscount = useMemo(
-    () => Number(activeDiscount || 0) + Number(cartPromoPreview.discountTotal || 0),
-    [activeDiscount, cartPromoPreview]
+    () =>
+      Math.min(
+        subtotalAfterPlatformFee,
+        Number(activeDiscount || 0) + Number(cartPromoPreview.discountTotal || 0)
+      ),
+    [activeDiscount, cartPromoPreview, subtotalAfterPlatformFee]
   );
 
   const netTotal = useMemo(
-    () => Math.max(0, grossTotal - totalDiscount),
-    [grossTotal, totalDiscount]
-  );
-
-  const platformFeeAmount = useMemo(
-    () => calcChannelFee(netTotal, activeFeePercent),
-    [netTotal, activeFeePercent]
+    () => Math.max(0, subtotalAfterPlatformFee - totalDiscount),
+    [subtotalAfterPlatformFee, totalDiscount]
   );
 
   const netAfterPlatformFee = useMemo(
-    () => Math.max(0, netTotal - platformFeeAmount),
-    [netTotal, platformFeeAmount]
+    () => subtotalAfterPlatformFee,
+    [subtotalAfterPlatformFee]
   );
 
   // ===== CART OPS =====
@@ -1003,22 +1012,35 @@ export default function CashierPOS() {
     [checkoutPromoPreview]
   );
 
-  const checkoutNetTotal = useMemo(() => {
-    if (!openOrder) return 0;
-    const gross = Number(openOrder.grossTotal || 0);
-    const md = Number(checkout.manualDiscount || 0);
-    const totalDisc = md + Number(checkoutPromoPreview.discountTotal || 0);
-    return Math.max(0, gross - totalDisc);
-  }, [openOrder, checkout.manualDiscount, checkoutPromoPreview]);
+  const checkoutGrossTotal = useMemo(
+    () => Number(openOrder?.grossTotal || 0),
+    [openOrder]
+  );
 
   const checkoutPlatformFeeAmount = useMemo(
-    () => calcChannelFee(checkoutNetTotal, checkoutFeePercent),
-    [checkoutNetTotal, checkoutFeePercent]
+    () => calcChannelFee(checkoutGrossTotal, checkoutFeePercent),
+    [checkoutGrossTotal, checkoutFeePercent]
+  );
+
+  const checkoutSubtotalAfterPlatformFee = useMemo(
+    () => Math.max(0, checkoutGrossTotal - checkoutPlatformFeeAmount),
+    [checkoutGrossTotal, checkoutPlatformFeeAmount]
+  );
+
+  const checkoutTotalDiscount = useMemo(() => {
+    const md = Number(checkout.manualDiscount || 0);
+    const promo = Number(checkoutPromoPreview.discountTotal || 0);
+    return Math.min(checkoutSubtotalAfterPlatformFee, md + promo);
+  }, [checkout.manualDiscount, checkoutPromoPreview, checkoutSubtotalAfterPlatformFee]);
+
+  const checkoutNetTotal = useMemo(
+    () => Math.max(0, checkoutSubtotalAfterPlatformFee - checkoutTotalDiscount),
+    [checkoutSubtotalAfterPlatformFee, checkoutTotalDiscount]
   );
 
   const checkoutNetAfterPlatformFee = useMemo(
-    () => Math.max(0, checkoutNetTotal - checkoutPlatformFeeAmount),
-    [checkoutNetTotal, checkoutPlatformFeeAmount]
+    () => checkoutSubtotalAfterPlatformFee,
+    [checkoutSubtotalAfterPlatformFee]
   );
 
   // ===== ORDER EDIT HELPERS =====
@@ -2007,20 +2029,31 @@ async function saveOrderEdits(orderId) {
                               <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
                               <div><b>- {rupiah(Number(cartPromoPreview.discountTotal || 0))}</b></div>
 
-                              <div className="muted" style={{ marginTop: 6 }}>Total Customer</div>
-                                  <div className="pos-total">{rupiah(netTotal)}</div>
+                              <div className="muted" style={{ marginTop: 6 }}>Total Menu</div>
+                                <div className="pos-total">{rupiah(grossTotal)}</div>
 
-                                  {activeSalesChannel === "GOJEK" ? (
-                                    <>
-                                      <div className="muted" style={{ marginTop: 6 }}>
-                                        Fee Gojek ({Number(activeFeePercent || 0).toFixed(2)}%)
-                                      </div>
-                                      <div><b>- {rupiah(platformFeeAmount)}</b></div>
+                                {activeSalesChannel === "GOJEK" ? (
+                                  <>
+                                    <div className="muted" style={{ marginTop: 6 }}>
+                                      Fee Gojek ({Number(activeFeePercent || 0).toFixed(2)}%)
+                                    </div>
+                                    <div><b>- {rupiah(platformFeeAmount)}</b></div>
 
-                                      <div className="muted" style={{ marginTop: 6 }}>Net Outlet</div>
-                                      <div><b>{rupiah(netAfterPlatformFee)}</b></div>
-                                    </>
-                                  ) : null}
+                                    <div className="muted" style={{ marginTop: 6 }}>Subtotal Setelah Fee</div>
+                                    <div><b>{rupiah(netAfterPlatformFee)}</b></div>
+
+                                    <div className="muted" style={{ marginTop: 6 }}>Promo + Diskon</div>
+                                    <div><b>- {rupiah(totalDiscount)}</b></div>
+
+                                    <div className="muted" style={{ marginTop: 6 }}>Total Akhir</div>
+                                    <div><b>{rupiah(netTotal)}</b></div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="muted" style={{ marginTop: 6 }}>Total Akhir</div>
+                                    <div className="pos-total">{rupiah(netTotal)}</div>
+                                  </>
+                                )}
                             </div>
                           </div>
                         </div>
@@ -2888,8 +2921,8 @@ async function saveOrderEdits(orderId) {
                         <div className="muted" style={{ marginTop: 6 }}>Diskon Promo</div>
                         <div><b>- {rupiah(Number(checkoutPromoPreview.discountTotal || 0))}</b></div>
 
-                        <div className="muted" style={{ marginTop: 6 }}>Total Customer</div>
-                          <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
+                        <div className="muted" style={{ marginTop: 6 }}>Total Menu</div>
+                          <div className="modal-net"><b>{rupiah(checkoutGrossTotal)}</b></div>
 
                           {checkoutChannel === "GOJEK" ? (
                             <>
@@ -2898,10 +2931,21 @@ async function saveOrderEdits(orderId) {
                               </div>
                               <div><b>- {rupiah(checkoutPlatformFeeAmount)}</b></div>
 
-                              <div className="muted" style={{ marginTop: 6 }}>Net Outlet</div>
+                              <div className="muted" style={{ marginTop: 6 }}>Subtotal Setelah Fee</div>
                               <div><b>{rupiah(checkoutNetAfterPlatformFee)}</b></div>
+
+                              <div className="muted" style={{ marginTop: 6 }}>Promo + Diskon</div>
+                              <div><b>- {rupiah(checkoutTotalDiscount)}</b></div>
+
+                              <div className="muted" style={{ marginTop: 6 }}>Total Akhir</div>
+                              <div><b>{rupiah(checkoutNetTotal)}</b></div>
                             </>
-                          ) : null}
+                          ) : (
+                            <>
+                              <div className="muted" style={{ marginTop: 6 }}>Total Akhir</div>
+                              <div className="modal-net"><b>{rupiah(checkoutNetTotal)}</b></div>
+                            </>
+                          )}
                       </div>
 
                       <div className="modal-actions">
