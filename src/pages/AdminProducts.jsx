@@ -24,6 +24,20 @@ function normPortion(v) {
   return "ALL";
 }
 
+function normSalesChannel(v) {
+  const s = String(v || "").trim().toUpperCase();
+  if (s === "GOJEK") return "GOJEK";
+  if (s === "REGULAR") return "REGULAR";
+  return "ALL";
+}
+
+function salesChannelLabel(v) {
+  const s = normSalesChannel(v);
+  if (s === "GOJEK") return "GOJEK";
+  if (s === "REGULAR") return "REGULAR";
+  return "ALL";
+}
+
 function getRecipeTone(status) {
   const s = String(status || "").toUpperCase();
   if (s === "READY") {
@@ -211,6 +225,7 @@ export default function AdminProducts() {
     name: "",
     priceSmall: 10000,
     priceLarge: 15000,
+    salesChannel: "REGULAR",
     isActive: true,
   });
 
@@ -338,6 +353,7 @@ export default function AdminProducts() {
       name: "",
       priceSmall: 10000,
       priceLarge: 15000,
+      salesChannel: "REGULAR",
       isActive: true,
     });
     setRecipeEnabled(false);
@@ -452,6 +468,7 @@ export default function AdminProducts() {
         name: String(form.name || "").trim(),
         priceSmall: toInt(form.priceSmall, 0),
         priceLarge: toInt(form.priceLarge, 0),
+        salesChannel: normSalesChannel(form.salesChannel),
       };
 
       if (!payload.sku || !payload.name) throw new Error("SKU dan Nama wajib diisi.");
@@ -533,6 +550,7 @@ export default function AdminProducts() {
       name: p.name || "",
       priceSmall: p.priceSmall ?? 0,
       priceLarge: p.priceLarge ?? 0,
+      salesChannel: normSalesChannel(p.salesChannel),
       isActive: active,
     });
   }
@@ -742,6 +760,10 @@ export default function AdminProducts() {
                     {form.id ? <span className="muted">ID: {form.id}</span> : <span className="muted">Create</span>}
                   </div>
 
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+                    Channel saat ini: <b>{salesChannelLabel(form.salesChannel)}</b>
+                  </div>
+
                   <form onSubmit={submit} className="adm-form">
                     <div className="adm-form-grid">
                       <div className="adm-field">
@@ -762,6 +784,20 @@ export default function AdminProducts() {
                       <div className="adm-field">
                         <label>Harga Besar</label>
                         <input className="input" type="number" value={form.priceLarge} onChange={(e) => setForm((f) => ({ ...f, priceLarge: e.target.value }))} />
+                      </div>
+                      <div className="adm-field">
+                        <label>Channel Penjualan</label>
+                        <select
+                          className="input"
+                          value={form.salesChannel}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, salesChannel: normSalesChannel(e.target.value) }))
+                          }
+                        >
+                          <option value="REGULAR">REGULAR</option>
+                          <option value="GOJEK">GOJEK</option>
+                          <option value="ALL">ALL</option>
+                        </select>
                       </div>
                     </div>
 
@@ -1049,6 +1085,9 @@ export default function AdminProducts() {
                           <div className="adm-list-top" style={{ alignItems: "center" }}>
                             <div className="adm-list-sku" title={p.sku}>{p.sku}</div>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                              <span className="adm-badge">
+                                {salesChannelLabel(p.salesChannel)}
+                              </span>
                               <span className={active ? "adm-badge adm-badge--cash" : "adm-badge"}>
                                 {active ? "ACTIVE" : "INACTIVE"}
                               </span>

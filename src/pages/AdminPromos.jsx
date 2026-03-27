@@ -17,6 +17,20 @@ function fmtLocal(dt) {
   }
 }
 
+function normSalesChannel(v) {
+  const s = String(v || "").trim().toUpperCase();
+  if (s === "GOJEK") return "GOJEK";
+  if (s === "REGULAR") return "REGULAR";
+  return "ALL";
+}
+
+function salesChannelLabel(v) {
+  const s = normSalesChannel(v);
+  if (s === "GOJEK") return "GOJEK";
+  if (s === "REGULAR") return "REGULAR";
+  return "ALL";
+}
+
 export default function AdminPromos() {
   const nav = useNavigate();
   const token = localStorage.getItem("admin_token");
@@ -35,7 +49,8 @@ export default function AdminPromos() {
   const [form, setForm] = useState({
     id: "",
     name: "",
-    type: "DISCOUNT_PERCENT", // DISCOUNT_PERCENT | BONUS_ITEM
+    type: "DISCOUNT_PERCENT",
+    salesChannel: "REGULAR",
     discountPercent: 10,
     minSubtotal: 0,
     bonusProductId: "",
@@ -60,6 +75,15 @@ export default function AdminPromos() {
     () => (products || []).filter((p) => (p.isActive ?? p.active) !== false),
     [products]
   );
+
+  const channelMatchedProducts = useMemo(() => {
+    const target = normSalesChannel(form.salesChannel);
+    return activeProducts.filter((p) => {
+      const pch = normSalesChannel(p.salesChannel);
+      if (target === "ALL") return pch === "ALL";
+      return pch === "ALL" || pch === target;
+    });
+  }, [activeProducts, form.salesChannel]);
 
   async function load({ silent = false } = {}) {
     if (!silent) {
@@ -94,6 +118,7 @@ export default function AdminPromos() {
       id: "",
       name: "",
       type: "DISCOUNT_PERCENT",
+      salesChannel: "REGULAR",
       discountPercent: 10,
       minSubtotal: 0,
       bonusProductId: "",
@@ -112,6 +137,7 @@ export default function AdminPromos() {
       id: p.id,
       name: p.name || "",
       type: p.type || "DISCOUNT_PERCENT",
+      salesChannel: normSalesChannel(p.salesChannel),
       discountPercent: p.discountPercent ?? 0,
       minSubtotal: p.minSubtotal ?? 0,
       bonusProductId: p.bonusProductId || "",
@@ -157,6 +183,7 @@ export default function AdminPromos() {
       const payload = {
         name: String(form.name || "").trim(),
         type: form.type,
+        salesChannel: normSalesChannel(form.salesChannel),
         discountPercent: Number(form.discountPercent || 0),
         minSubtotal: Number(form.minSubtotal || 0),
         bonusProductId: form.bonusProductId || null,
@@ -382,6 +409,25 @@ export default function AdminPromos() {
                       </div>
                     </div>
 
+                    <div className="adm-field" style={{ marginTop: 10 }}>
+                      <label>Channel Penjualan</label>
+                      <select
+                        className="input"
+                        value={form.salesChannel}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            salesChannel: normSalesChannel(e.target.value),
+                            bonusProductId: "",
+                          }))
+                        }
+                      >
+                        <option value="REGULAR">REGULAR</option>
+                        <option value="GOJEK">GOJEK</option>
+                        <option value="ALL">ALL</option>
+                      </select>
+                    </div>
+
                     {form.type === "DISCOUNT_PERCENT" ? (
                       <div className="adm-field" style={{ marginTop: 10 }}>
                         <label>Diskon (%)</label>
@@ -403,7 +449,7 @@ export default function AdminPromos() {
                               onChange={(e) => setForm((f) => ({ ...f, bonusProductId: e.target.value }))}
                             >
                               <option value="">-- pilih product --</option>
-                              {activeProducts.map((p) => (
+                              {channelMatchedProducts.map((p) => (
                                 <option key={p.id} value={p.id}>
                                   {p.name} ({p.sku})
                                 </option>
@@ -566,9 +612,15 @@ export default function AdminPromos() {
                               {p.name}
                             </div>
 
-                            <span className={active ? "adm-badge adm-badge--cash" : "adm-badge"}>
-                              {active ? "ACTIVE" : "INACTIVE"}
-                            </span>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                              <span className="adm-badge">
+                                {salesChannelLabel(p.salesChannel)}
+                              </span>
+
+                              <span className={active ? "adm-badge adm-badge--cash" : "adm-badge"}>
+                                {active ? "ACTIVE" : "INACTIVE"}
+                              </span>
+                            </div>
                           </div>
 
                           <div className="adm-list-meta">
