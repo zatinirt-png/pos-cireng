@@ -49,7 +49,7 @@ export default function AdminPromos() {
   const [form, setForm] = useState({
     id: "",
     name: "",
-    type: "DISCOUNT_PERCENT",
+    type: "DISCOUNT_PERCENT", // DISCOUNT_PERCENT | DISCOUNT_AMOUNT | BONUS_ITEM
     salesChannel: "REGULAR",
     discountPercent: 10,
     minSubtotal: 0,
@@ -120,6 +120,7 @@ export default function AdminPromos() {
       type: "DISCOUNT_PERCENT",
       salesChannel: "REGULAR",
       discountPercent: 10,
+      discountAmount: 0,
       minSubtotal: 0,
       bonusProductId: "",
       bonusPortion: "SMALL",
@@ -139,6 +140,7 @@ export default function AdminPromos() {
       type: p.type || "DISCOUNT_PERCENT",
       salesChannel: normSalesChannel(p.salesChannel),
       discountPercent: p.discountPercent ?? 0,
+      discountAmount: p.discountAmount ?? 0,
       minSubtotal: p.minSubtotal ?? 0,
       bonusProductId: p.bonusProductId || "",
       bonusPortion: p.bonusPortion || "SMALL",
@@ -167,6 +169,11 @@ export default function AdminPromos() {
     if (type === "DISCOUNT_PERCENT") {
       return `Diskon ${Number(p.discountPercent || 0)}% • Min Rp ${idr(min)}`;
     }
+
+    if (type === "DISCOUNT_AMOUNT") {
+      return `Diskon Rp ${idr(Number(p.discountAmount || 0))} • Min Rp ${idr(min)}`;
+    }
+
     const prod = productsMap.get(p.bonusProductId);
     const prodName = prod?.name || "(Produk)";
     const qty = Number(p.bonusQty || 0);
@@ -185,6 +192,7 @@ export default function AdminPromos() {
         type: form.type,
         salesChannel: normSalesChannel(form.salesChannel),
         discountPercent: Number(form.discountPercent || 0),
+        discountAmount: Number(form.discountAmount || 0),
         minSubtotal: Number(form.minSubtotal || 0),
         bonusProductId: form.bonusProductId || null,
         bonusPortion: form.bonusPortion || "SMALL",
@@ -195,7 +203,7 @@ export default function AdminPromos() {
       };
 
       if (!payload.name) throw new Error("Nama promo wajib.");
-      if (!["DISCOUNT_PERCENT", "BONUS_ITEM"].includes(payload.type))
+      if (!["DISCOUNT_PERCENT", "DISCOUNT_AMOUNT", "BONUS_ITEM"].includes(payload.type))
         throw new Error("Tipe promo tidak valid.");
 
       if (payload.type === "DISCOUNT_PERCENT") {
@@ -206,10 +214,15 @@ export default function AdminPromos() {
         ) {
           throw new Error("Diskon persen harus 1–100.");
         }
+      } else if (payload.type === "DISCOUNT_AMOUNT") {
+        if (!Number.isFinite(payload.discountAmount) || payload.discountAmount <= 0) {
+          throw new Error("Diskon nominal harus lebih dari 0.");
+        }
       } else {
         if (!payload.bonusProductId) throw new Error("Bonus product wajib dipilih.");
-        if (!Number.isFinite(payload.bonusQty) || payload.bonusQty <= 0)
+        if (!Number.isFinite(payload.bonusQty) || payload.bonusQty <= 0) {
           throw new Error("Bonus qty harus > 0.");
+        }
       }
 
       if (!form.id) {
@@ -394,6 +407,7 @@ export default function AdminPromos() {
                           onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
                         >
                           <option value="DISCOUNT_PERCENT">Diskon Persen</option>
+                          <option value="DISCOUNT_AMOUNT">Diskon Nominal</option>
                           <option value="BONUS_ITEM">Bonus Item</option>
                         </select>
                       </div>
@@ -436,6 +450,17 @@ export default function AdminPromos() {
                           type="number"
                           value={form.discountPercent}
                           onChange={(e) => setForm((f) => ({ ...f, discountPercent: e.target.value }))}
+                        />
+                      </div>
+                    ) : form.type === "DISCOUNT_AMOUNT" ? (
+                      <div className="adm-field" style={{ marginTop: 10 }}>
+                        <label>Diskon Nominal (Rp)</label>
+                        <input
+                          className="input"
+                          type="number"
+                          value={form.discountAmount}
+                          onChange={(e) => setForm((f) => ({ ...f, discountAmount: e.target.value }))}
+                          placeholder="contoh: 3000"
                         />
                       </div>
                     ) : (
@@ -590,7 +615,13 @@ export default function AdminPromos() {
                       const end = p.endAt ? fmtLocal(p.endAt) : "";
 
                       const typeLabel =
-                        p.type === "DISCOUNT_PERCENT" ? "Diskon %" : p.type === "BONUS_ITEM" ? "Bonus Item" : (p.type || "-");
+                        p.type === "DISCOUNT_PERCENT"
+                          ? "Diskon %"
+                          : p.type === "DISCOUNT_AMOUNT"
+                          ? "Diskon Nominal"
+                          : p.type === "BONUS_ITEM"
+                          ? "Bonus Item"
+                          : (p.type || "-");
 
                       return (
                         <div
