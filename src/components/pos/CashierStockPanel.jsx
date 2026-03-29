@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiPost } from "../../api";
 import Tabs from "../ui/Tabs";
 import Modal from "../ui/Modal";
@@ -79,6 +79,7 @@ export default function CashierStockPanel({ token, meta, shift, cartName }) {
 
   const [adjOpen, setAdjOpen] = useState(false);
   const [adjBusy, setAdjBusy] = useState(false);
+  const adjLockRef = useRef(false);
   const [adjErr, setAdjErr] = useState("");
   const [adjForm, setAdjForm] = useState({ ingredientId: "", mode: "ADD", qty: 1, note: "" });
 
@@ -163,6 +164,8 @@ export default function CashierStockPanel({ token, meta, shift, cartName }) {
 
   async function submitAdjust() {
     if (!token) return;
+    if (adjLockRef.current) return;
+    adjLockRef.current = true;
     setAdjBusy(true);
     setAdjErr("");
     try {
@@ -173,16 +176,17 @@ export default function CashierStockPanel({ token, meta, shift, cartName }) {
       if (!Number.isFinite(qty) || qty <= 0) throw new Error("Qty harus bilangan bulat > 0");
 
       const delta = adjForm.mode === "SUB" ? -Math.abs(qty) : Math.abs(qty);
-      await apiPost("/api/cashier/inventory/adjust", { ingredientId, delta, note: adjForm.note || "" }, token);
+      const res = await apiPost("/api/cashier/inventory/adjust", { ingredientId, delta, note: adjForm.note || "" }, token);
 
       setAdjOpen(false);
       setAdjForm({ ingredientId: "", mode: "ADD", qty: 1, note: "" });
-      setTrMsg("Stok gerobak berhasil diupdate.");
+      setTrMsg(res?.duplicateIgnored ? "Request duplikat diabaikan. Stok tidak dipotong dua kali." : "Stok gerobak berhasil diupdate.");
       await loadStock();
     } catch (e) {
       setAdjErr(e?.message || "Gagal update stok");
     } finally {
       setAdjBusy(false);
+      adjLockRef.current = false;
     }
   }
 
@@ -298,8 +302,8 @@ export default function CashierStockPanel({ token, meta, shift, cartName }) {
         </div>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="btn secondary btn--sm" type="button" onClick={() => setAdjOpen(true)} disabled={!shift}>
-            Update Stok
+          <button className="btn secondary btn--sm" type="button" onClick={() => setAdjOpen(true)} disabled={!shift || adjBusy}>
+            {adjBusy ? "Menyimpan..." : "Update Stok"}
           </button>
           <button className="btn btn-primary btn--sm" type="button" onClick={loadStock} disabled={stockLoading}>
             {stockLoading ? "Memuat..." : "Refresh"}
@@ -418,9 +422,9 @@ export default function CashierStockPanel({ token, meta, shift, cartName }) {
                           setAdjForm((p) => ({ ...p, ingredientId: it.id || it.ingredientId || it.itemId }));
                           setAdjOpen(true);
                         }}
-                        disabled={!shift}
+                        disabled={!shift || adjBusy}
                       >
-                        Adjust
+                        {adjBusy ? "Menyimpan..." : "Adjust"}
                       </button>
                     </td>
                   </tr>

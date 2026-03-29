@@ -420,7 +420,9 @@ export default function CashierPOS() {
   const qDidFirstLoadRef = useRef(false);
 
   const [saleBusy, setSaleBusy] = useState(false);
+  const [openShiftBusy, setOpenShiftBusy] = useState(false);
   const saleLockRef = useRef(false);
+  const openShiftLockRef = useRef(false);
 
   useEffect(() => {
     if (!token) nav("/cashier");
@@ -796,6 +798,9 @@ export default function CashierPOS() {
 
   // ===== SHIFT OPS =====
   async function openShift() {
+    if (openShiftLockRef.current) return;
+    openShiftLockRef.current = true;
+    setOpenShiftBusy(true);
     setErr("");
     setMsg("");
 
@@ -805,11 +810,10 @@ export default function CashierPOS() {
       const hasCireng = (invStocks || []).some(
         (s) => String(s.name || "").toLowerCase() === "cireng"
       );
-      
+
       if (hasCireng && !selected.some((s) => String(s.name || "").toLowerCase() === "cireng")) {
         throw new Error("Cireng wajib dipilih untuk stok awal.");
       }
-      
 
       const openingStocks = selected.map((s) => ({
         ingredientId: s.id,
@@ -835,6 +839,9 @@ export default function CashierPOS() {
       setMsg("Shift dibuka.");
     } catch (e) {
       setErr(e?.message || "Gagal buka shift");
+    } finally {
+      setOpenShiftBusy(false);
+      openShiftLockRef.current = false;
     }
   }
 
@@ -1551,8 +1558,9 @@ async function saveOrderEdits(orderId) {
                               className="btn secondary btn--sm"
                               type="button"
                               onClick={() => loadOpeningStocks({ preserve: true })}
+                              disabled={invLoading || openShiftBusy}
                             >
-                              Refresh bahan
+                              {invLoading ? "Memuat..." : "Refresh bahan"}
                             </button>
                           </div>
                         </div>
@@ -1653,8 +1661,8 @@ async function saveOrderEdits(orderId) {
                       </div>
 
                       <div className="pos-actions">
-                        <button className="btn" type="button" onClick={openShift}>
-                          Buka Shift
+                        <button className="btn" type="button" onClick={openShift} disabled={openShiftBusy || invLoading}>
+                          {openShiftBusy ? "Membuka Shift..." : "Buka Shift"}
                         </button>
 
                         {invCentralStocks?.length ? (
