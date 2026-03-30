@@ -831,14 +831,48 @@ export default function CashierPOS() {
 
       setShift(res.shift);
 
-      const sum = await apiGet("/api/shifts/summary", token);
+      const [sum, mvRes] = await Promise.all([
+        apiGet("/api/shifts/summary", token),
+        apiGet("/api/cash/movements", token),
+      ]);
+
       setSummary(sum.summary);
-      setMovements([]);
+      setMovements(mvRes.movements || []);
       await loadQueue();
 
-      setMsg("Shift dibuka.");
+      setMsg(
+        res?.alreadyOpen
+          ? "Shift sudah terbuka. Tampilan disinkronkan ulang."
+          : "Shift dibuka."
+      );
     } catch (e) {
-      setErr(e?.message || "Gagal buka shift");
+      const msg = e?.message || "Gagal buka shift";
+
+      if (/shift masih open|shift sudah open|sudah dibuka|sedang diproses/i.test(String(msg || ""))) {
+        try {
+          const [shiftRes, sumRes, mvRes] = await Promise.all([
+            apiGet("/api/shifts/current", token),
+            apiGet("/api/shifts/summary", token),
+            apiGet("/api/cash/movements", token),
+          ]);
+
+          setShift(shiftRes.shift || null);
+          setSummary(sumRes.summary || null);
+          setMovements(mvRes.movements || []);
+
+          if (shiftRes.shift) {
+            await loadQueue({ silent: true });
+            setMsg("Shift yang sudah terbuka berhasil dimuat ulang.");
+            setErr("");
+          } else {
+            setErr(msg);
+          }
+        } catch {
+          setErr(msg);
+        }
+      } else {
+        setErr(msg);
+      }
     } finally {
       setOpenShiftBusy(false);
       openShiftLockRef.current = false;
