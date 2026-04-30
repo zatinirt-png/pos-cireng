@@ -1,77 +1,198 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-// ===== utils: decode JWT payload (tanpa verifikasi signature, cukup untuk baca role) =====
 function decodeJwtPayload(token) {
   try {
     const parts = String(token || "").split(".");
     if (parts.length < 2) return null;
+
     const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const json = decodeURIComponent(
       atob(base64)
         .split("")
-        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .map((char) => "%" + ("00" + char.charCodeAt(0).toString(16)).slice(-2))
         .join("")
     );
+
     return JSON.parse(json);
   } catch {
     return null;
   }
 }
 
-// Tentukan scope dari route aktif
 function scopeFromPath(pathname) {
-  // LoginGate: jangan tampilkan role apa pun
   if (pathname === "/") return "GUEST";
-
   if (pathname.startsWith("/admin")) return "ADMIN";
-  if (pathname.startsWith("/partner")) return "PARTNER";
   if (pathname.startsWith("/cashier")) return "CASHIER";
-
+  if (pathname.startsWith("/partner")) return "PARTNER";
   return "GUEST";
 }
 
-// Ambil token SESUAI scope route (bukan token pertama yang ketemu)
 function getScopedSession(scope) {
-  if (scope === "GUEST") return { tokenKey: null, token: null, role: null };
+  if (scope === "GUEST") {
+    return {
+      tokenKey: null,
+      token: null,
+      role: null,
+    };
+  }
 
   const keysByRole = {
     ADMIN: ["admin_token", "auth_token"],
-    PARTNER: ["partner_token", "auth_token"],
     CASHIER: ["cashier_token", "auth_token"],
+    PARTNER: ["partner_token", "auth_token"],
   };
 
   const keys = keysByRole[scope] || ["auth_token"];
 
   for (const key of keys) {
-    const t = localStorage.getItem(key);
-    if (!t) continue;
+    const token = localStorage.getItem(key);
+    if (!token) continue;
 
-    const payload = decodeJwtPayload(t);
+    const payload = decodeJwtPayload(token);
     const role = payload?.role || null;
 
-    // kalau auth_token dipakai, pastikan role di token cocok dengan scope
     if (role && role !== scope) continue;
 
-    return { tokenKey: key, token: t, role: role || scope };
+    return {
+      tokenKey: key,
+      token,
+      role: role || scope,
+    };
   }
 
-  return { tokenKey: null, token: null, role: null };
+  return {
+    tokenKey: null,
+    token: null,
+    role: null,
+  };
 }
 
-function isActivePath(current, to) {
+function isActivePath(location, to) {
   if (!to) return false;
-  if (to === "/") return current === "/";
-  return current === to || current.startsWith(to + "/");
+
+  const current = `${location.pathname}${location.search || ""}`;
+
+  if (to === "/") return location.pathname === "/";
+  if (to.includes("?")) return current === to;
+
+  return location.pathname === to || location.pathname.startsWith(`${to}/`);
 }
 
-function toneFromTo(to) {
-  if (to?.startsWith("/cashier")) return "orange";
+function getTone(to) {
   if (to?.startsWith("/admin")) return "red";
+  if (to?.startsWith("/cashier")) return "orange";
   if (to?.startsWith("/partner")) return "amber";
   return "slate";
 }
 
+function getRoleLabel(role, scope) {
+  if (scope === "GUEST") return "Navigasi cepat";
+  if (role === "ADMIN") return "Role: Admin";
+  if (role === "CASHIER") return "Role: Kasir";
+  if (role === "PARTNER") return "Role: Mitra";
+  return "Belum login";
+}
+
+function buildItems(role) {
+  if (!role) {
+    return [
+      {
+        label: "Beranda",
+        sub: "Pilih akses aplikasi",
+        to: "/",
+      },
+      {
+        label: "Login Kasir",
+        sub: "Mulai shift dan transaksi",
+        to: "/cashier",
+      },
+      {
+        label: "Login Admin",
+        sub: "Kelola operasional",
+        to: "/admin",
+      },
+      {
+        label: "Login Mitra",
+        sub: "Pantau cabang",
+        to: "/partner",
+      },
+    ];
+  }
+
+  if (role === "ADMIN") {
+    return [
+      {
+        label: "Dashboard",
+        sub: "Ringkasan utama",
+        to: "/admin/dashboard",
+      },
+      {
+        label: "Gerobak",
+        sub: "Cabang dan lokasi",
+        to: "/admin/carts",
+      },
+      {
+        label: "Produk",
+        sub: "Menu dan harga",
+        to: "/admin/products",
+      },
+      {
+        label: "Promo",
+        sub: "Diskon dan bonus",
+        to: "/admin/promos",
+      },
+      {
+        label: "Users",
+        sub: "Akun dan akses",
+        to: "/admin/users",
+      },
+      {
+        label: "Stok",
+        sub: "Bahan dan resep",
+        to: "/admin/inventory",
+      },
+      {
+        label: "Laporan",
+        sub: "Penjualan dan export",
+        to: "/admin/reports",
+      },
+    ];
+  }
+
+  if (role === "CASHIER") {
+    return [
+      {
+        label: "POS Kasir",
+        sub: "Jualan dan antrian",
+        to: "/cashier/pos",
+      },
+    ];
+  }
+
+  if (role === "PARTNER") {
+    return [
+      {
+        label: "Dashboard Mitra",
+        sub: "Pantau performa",
+        to: "/partner/dashboard",
+      },
+      {
+        label: "Stok Gerobak",
+        sub: "Pantau stok cabang",
+        to: "/partner/dashboard?tab=stocks",
+      },
+    ];
+  }
+
+  return [
+    {
+      label: "Beranda",
+      sub: "Kembali ke awal",
+      to: "/",
+    },
+  ];
+}
 
 export default function SideNav({ open: openProp, setOpen: setOpenProp }) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -79,140 +200,98 @@ export default function SideNav({ open: openProp, setOpen: setOpenProp }) {
   const open = openProp ?? internalOpen;
   const setOpen = setOpenProp ?? setInternalOpen;
 
-  const loc = useLocation();
-  const nav = useNavigate();
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  // scope ditentukan dari path aktif
-  const scope = useMemo(() => scopeFromPath(loc.pathname), [loc.pathname]);
-  const session = useMemo(() => getScopedSession(scope), [scope, loc.pathname]);
- // ✅ re-run tiap pindah route
+  const scope = useMemo(() => scopeFromPath(location.pathname), [location.pathname]);
 
+  const session = useMemo(
+    () => getScopedSession(scope),
+    [scope, location.pathname, location.search]
+  );
 
-  const role = session.role; // "ADMIN" | "PARTNER" | "CASHIER" | null
+  const role = session.role;
 
-  // items dinamis sesuai role
-  const items = useMemo(() => {
-  if (!role) {
-    return [
-      { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
-      { label: "Login Kasir", sub: "Mulai shift", to: "/cashier", tone: "orange" },
-      { label: "Login Admin", sub: "Kelola data", to: "/admin", tone: "red" },
-      { label: "Login Mitra", sub: "Pantau cabang", to: "/partner", tone: "amber" },
-    ];
-  }
+  const items = useMemo(() => buildItems(role), [role]);
 
-  if (role === "ADMIN") {
-    return [
-      { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
-      { label: "Dashboard", sub: "Ringkasan performa", to: "/admin/dashboard", tone: "red" },
-      { label: "Kelola Gerobak", sub: "Cabang & gerobak", to: "/admin/carts", tone: "red" },
-      { label: "Produk", sub: "Data produk & harga", to: "/admin/products", tone: "red" },
-      { label: "Promo", sub: "Diskon & campaign", to: "/admin/promos", tone: "red" },
-      { label: "Users", sub: "Akun & akses", to: "/admin/users", tone: "red" },
-      { label: "Stok", sub: "Stok gerobak & bahan", to: "/admin/inventory", tone: "red" },
-      { label: "Reports", sub: "Laporan penjualan", to: "/admin/reports", tone: "red" },
-    ];
-  }
-
-  if (role === "CASHIER") {
-    return [
-      { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
-      { label: "Kasir POS", sub: "Mulai transaksi", to: "/cashier/pos", tone: "orange" },
-    ];
-  }
-
-  if (role === "PARTNER") {
-    return [
-      { label: "Home", sub: "Beranda", to: "/", tone: "slate" },
-      { label: "Dashboard Mitra", sub: "Pantau cabang", to: "/partner/dashboard", tone: "amber" },
-      { label: "Stok", sub: "Stok gerobakmu", to: "/partner/dashboard?tab=stocks", tone: "red" },
-    ];
-  }
-
-  return [{ label: "Home", sub: "Beranda", to: "/", tone: "slate" }];
-}, [role]);
-
-
-  // auto close ketika pindah halaman
   useEffect(() => {
     setOpen(false);
-  }, [loc.pathname]);
+  }, [location.pathname, location.search]);
 
-  // lock scroll + ESC untuk close
   useEffect(() => {
     if (!open) return;
 
-    const prevOverflow = document.body.style.overflow;
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    const onKey = (e) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
+    function handleKeydown(event) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeydown);
 
     return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeydown);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
-  const go = (to) => {
+  function goTo(to) {
     setOpen(false);
-    nav(to);
-  };
+    navigate(to);
+  }
 
-  const logout = () => {
-    // hapus token yg mungkin ada (biar aman)
+  function logout() {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("admin_token");
-    localStorage.removeItem("partner_token");
     localStorage.removeItem("cashier_token");
+    localStorage.removeItem("partner_token");
 
-    // bersihin data kasir juga
     localStorage.removeItem("cashier_cartId");
     localStorage.removeItem("cashier_cartName");
 
     setOpen(false);
-    nav("/");
-  };
+    navigate("/");
+  }
 
   return (
     <>
-      
-
-      {/* Overlay */}
       <div
         className={`sidenav-overlay ${open ? "open" : ""}`}
         onClick={() => setOpen(false)}
         aria-hidden={!open}
       />
 
-      {/* Panel */}
       <aside className={`sidenav-panel ${open ? "open" : ""}`} aria-hidden={!open}>
         <div className="sidenav-header">
           <div>
             <div className="sidenav-title">Menu</div>
-            <div className="sidenav-subtitle">
-              {/* LoginGate (/) selalu "Navigasi cepat" walau token admin ada */}
-              {scope === "GUEST" ? "Navigasi cepat" : role ? `Role: ${role}` : "Belum login"}
-            </div>
+            <div className="sidenav-subtitle">{getRoleLabel(role, scope)}</div>
           </div>
 
-          {/* Close: nyatu di header sidebar */}
-          
+          <button
+            type="button"
+            className="sidenav-cta"
+            style={{ flex: "0 0 auto", paddingInline: 12 }}
+            onClick={() => setOpen(false)}
+          >
+            Tutup
+          </button>
         </div>
 
-        <div className="sidenav-list">
-          {items.map((it) => {
-            const active = isActivePath(loc.pathname, it.to);
-            const tone = it.tone || toneFromTo(it.to);
+        <nav className="sidenav-list" aria-label="Navigasi utama">
+          {items.map((item) => {
+            const active = isActivePath(location, item.to);
+            const tone = getTone(item.to);
 
             return (
               <button
-                key={it.to}
+                key={item.to}
                 type="button"
                 className={`sidenav-item ${active ? "active" : ""}`}
-                onClick={() => go(it.to)}
+                onClick={() => goTo(item.to)}
               >
                 <span className="sidenav-item-accent" aria-hidden="true" />
 
@@ -221,21 +300,22 @@ export default function SideNav({ open: openProp, setOpen: setOpenProp }) {
                 </span>
 
                 <span className="sidenav-item-body">
-                  <span className="sidenav-item-title">{it.label}</span>
-                  <span className="sidenav-item-sub">{it.sub}</span>
+                  <span className="sidenav-item-title">{item.label}</span>
+                  <span className="sidenav-item-sub">{item.sub}</span>
                 </span>
 
-                <span className="sidenav-item-chevron" aria-hidden="true">›</span>
+                <span className="sidenav-item-chevron" aria-hidden="true">
+                  ›
+                </span>
               </button>
             );
           })}
-        </div>
-
+        </nav>
 
         <div className="sidenav-footer">
           <div className="sidenav-footer-actions">
-            <button type="button" className="sidenav-cta" onClick={() => setOpen(false)}>
-              Tutup
+            <button type="button" className="sidenav-cta" onClick={() => goTo("/")}>
+              Beranda
             </button>
 
             {role && (
@@ -245,9 +325,10 @@ export default function SideNav({ open: openProp, setOpen: setOpenProp }) {
             )}
           </div>
 
-          <div className="sidenav-meta">POS Cireng • v1.0</div>
+          <div className="sidenav-meta">
+            CBUR POS • Sistem kasir dan stok gerobak
+          </div>
         </div>
-
       </aside>
     </>
   );

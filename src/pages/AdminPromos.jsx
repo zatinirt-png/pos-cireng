@@ -10,8 +10,12 @@ function idr(n) {
 
 function fmtLocal(dt) {
   if (!dt) return "";
+
   try {
-    return new Date(dt).toLocaleString("id-ID");
+    return new Date(dt).toLocaleString("id-ID", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
   } catch {
     return String(dt);
   }
@@ -29,6 +33,52 @@ function salesChannelLabel(v) {
   if (s === "GOJEK") return "GOJEK";
   if (s === "REGULAR") return "REGULAR";
   return "ALL";
+}
+
+function typeLabel(type) {
+  if (type === "DISCOUNT_PERCENT") return "Diskon %";
+  if (type === "DISCOUNT_AMOUNT") return "Diskon Nominal";
+  if (type === "BONUS_ITEM") return "Bonus Item";
+  return type || "-";
+}
+
+function getWindowState(p) {
+  const now = new Date();
+  const start = p?.startAt ? new Date(p.startAt) : null;
+  const end = p?.endAt ? new Date(p.endAt) : null;
+
+  if (start && Number.isNaN(start.getTime())) return "TANPA JADWAL";
+  if (end && Number.isNaN(end.getTime())) return "TANPA JADWAL";
+
+  if (start && now < start) return "TERJADWAL";
+  if (end && now > end) return "SELESAI";
+
+  if (start || end) return "BERJALAN";
+
+  return "TANPA JADWAL";
+}
+
+function WindowBadge({ promo }) {
+  const state = getWindowState(promo);
+
+  const className =
+    state === "BERJALAN"
+      ? "adm-badge adm-badge--cash"
+      : state === "SELESAI"
+      ? "adm-badge badge--danger"
+      : "adm-badge";
+
+  return <span className={className}>{state}</span>;
+}
+
+function StatCard({ label, value, note }) {
+  return (
+    <section className="adm-panel adm-panel--kpi">
+      <div className="adm-kpi-label">{label}</div>
+      <div className="adm-kpi-value">{value}</div>
+      {note ? <div className="adm-kpi-hint">{note}</div> : null}
+    </section>
+  );
 }
 
 export default function AdminPromos() {
@@ -49,9 +99,10 @@ export default function AdminPromos() {
   const [form, setForm] = useState({
     id: "",
     name: "",
-    type: "DISCOUNT_PERCENT", // DISCOUNT_PERCENT | DISCOUNT_AMOUNT | BONUS_ITEM
+    type: "DISCOUNT_PERCENT",
     salesChannel: "REGULAR",
     discountPercent: 10,
+    discountAmount: 0,
     minSubtotal: 0,
     bonusProductId: "",
     bonusPortion: "SMALL",
@@ -71,19 +122,74 @@ export default function AdminPromos() {
     return m;
   }, [products]);
 
-  const activeProducts = useMemo(
-    () => (products || []).filter((p) => (p.isActive ?? p.active) !== false),
-    [products]
-  );
+  const activeProducts = useMemo(() => {
+    return (products || []).filter((p) => (p.isActive ?? p.active) !== false);
+  }, [products]);
 
   const channelMatchedProducts = useMemo(() => {
     const target = normSalesChannel(form.salesChannel);
+
     return activeProducts.filter((p) => {
-      const pch = normSalesChannel(p.salesChannel);
-      if (target === "ALL") return pch === "ALL";
-      return pch === "ALL" || pch === target;
+      const productChannel = normSalesChannel(p.salesChannel);
+
+      if (target === "ALL") return productChannel === "ALL";
+
+      return productChannel === "ALL" || productChannel === target;
     });
   }, [activeProducts, form.salesChannel]);
+
+  const editingPromo = useMemo(() => {
+    if (!form.id) return null;
+    return (promos || []).find((x) => x.id === form.id) || null;
+  }, [form.id, promos]);
+
+  const editingActive = useMemo(() => {
+    if (!editingPromo) return !!form.isActive;
+    return !!(editingPromo.isActive ?? editingPromo.active);
+  }, [editingPromo, form.isActive]);
+
+  const visiblePromos = useMemo(() => {
+    const rows = showInactive
+      ? promos || []
+      : (promos || []).filter((p) => (p.isActive ?? p.active) !== false);
+
+    return [...rows].sort((a, b) => {
+      const activeA = (a.isActive ?? a.active) !== false ? 0 : 1;
+      const activeB = (b.isActive ?? b.active) !== false ? 0 : 1;
+
+      if (activeA !== activeB) return activeA - activeB;
+
+      const startA = a.startAt ? new Date(a.startAt).getTime() : 0;
+      const startB = b.startAt ? new Date(b.startAt).getTime() : 0;
+
+      return startB - startA;
+    });
+  }, [promos, showInactive]);
+
+  const promoStats = useMemo(() => {
+    const rows = promos || [];
+
+    let active = 0;
+    let inactive = 0;
+    let discount = 0;
+    let bonus = 0;
+
+    rows.forEach((promo) => {
+      if ((promo.isActive ?? promo.active) !== false) active += 1;
+      else inactive += 1;
+
+      if (promo.type === "BONUS_ITEM") bonus += 1;
+      else discount += 1;
+    });
+
+    return {
+      total: rows.length,
+      active,
+      inactive,
+      discount,
+      bonus,
+    };
+  }, [promos]);
 
   async function load({ silent = false } = {}) {
     if (!silent) {
@@ -91,15 +197,17 @@ export default function AdminPromos() {
       setErr("");
       setMsg("");
     }
+
     try {
-      const [r1, r2] = await Promise.all([
+      const [promoResponse, productResponse] = await Promise.all([
         apiGet("/api/admin/promos", token),
         apiGet("/api/admin/products", token),
       ]);
-      setPromos(r1.promos || []);
-      setProducts(r2.products || []);
-    } catch (e) {
-      if (!silent) setErr(e?.message || "Gagal load promo");
+
+      setPromos(promoResponse.promos || []);
+      setProducts(productResponse.products || []);
+    } catch (error) {
+      if (!silent) setErr(error?.message || "Gagal load promo");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -107,9 +215,11 @@ export default function AdminPromos() {
 
   useEffect(() => {
     if (!token) return;
-    if (didLoadRef.current) return; // cegah double load (StrictMode)
+    if (didLoadRef.current) return;
+
     didLoadRef.current = true;
     load();
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -134,6 +244,7 @@ export default function AdminPromos() {
   function editItem(p) {
     setErr("");
     setMsg("");
+
     setForm({
       id: p.id,
       name: p.name || "",
@@ -149,40 +260,37 @@ export default function AdminPromos() {
       startAt: p.startAt ? String(p.startAt).slice(0, 16) : "",
       endAt: p.endAt ? String(p.endAt).slice(0, 16) : "",
     });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   }
-
-  const editingPromo = useMemo(() => {
-    if (!form.id) return null;
-    return (promos || []).find((x) => x.id === form.id) || null;
-  }, [form.id, promos]);
-
-  const editingActive = useMemo(() => {
-    if (!editingPromo) return !!form.isActive;
-    return !!(editingPromo.isActive ?? editingPromo.active);
-  }, [editingPromo, form.isActive]);
 
   function buildRuleText(p) {
     if (!p) return "-";
-    const type = p.type;
+
     const min = Number(p.minSubtotal || 0);
 
-    if (type === "DISCOUNT_PERCENT") {
+    if (p.type === "DISCOUNT_PERCENT") {
       return `Diskon ${Number(p.discountPercent || 0)}% • Min Rp ${idr(min)}`;
     }
 
-    if (type === "DISCOUNT_AMOUNT") {
+    if (p.type === "DISCOUNT_AMOUNT") {
       return `Diskon Rp ${idr(Number(p.discountAmount || 0))} • Min Rp ${idr(min)}`;
     }
 
-    const prod = productsMap.get(p.bonusProductId);
-    const prodName = prod?.name || "(Produk)";
+    const product = productsMap.get(p.bonusProductId);
+    const productName = product?.name || "(Produk)";
     const qty = Number(p.bonusQty || 0);
     const portion = p.bonusPortion || "SMALL";
-    return `Bonus ${prodName} x${qty} (${portion}) • Min Rp ${idr(min)}`;
+
+    return `Bonus ${productName} x${qty} (${portion}) • Min Rp ${idr(min)}`;
   }
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(event) {
+    event.preventDefault();
+
     setErr("");
     setMsg("");
 
@@ -202,9 +310,15 @@ export default function AdminPromos() {
         endAt: form.endAt ? new Date(form.endAt).toISOString() : null,
       };
 
-      if (!payload.name) throw new Error("Nama promo wajib.");
-      if (!["DISCOUNT_PERCENT", "DISCOUNT_AMOUNT", "BONUS_ITEM"].includes(payload.type))
+      if (!payload.name) throw new Error("Nama promo wajib diisi.");
+
+      if (!["DISCOUNT_PERCENT", "DISCOUNT_AMOUNT", "BONUS_ITEM"].includes(payload.type)) {
         throw new Error("Tipe promo tidak valid.");
+      }
+
+      if (payload.startAt && payload.endAt && payload.startAt > payload.endAt) {
+        throw new Error("Tanggal mulai tidak boleh lebih besar dari tanggal selesai.");
+      }
 
       if (payload.type === "DISCOUNT_PERCENT") {
         if (
@@ -214,14 +328,21 @@ export default function AdminPromos() {
         ) {
           throw new Error("Diskon persen harus 1–100.");
         }
-      } else if (payload.type === "DISCOUNT_AMOUNT") {
+      }
+
+      if (payload.type === "DISCOUNT_AMOUNT") {
         if (!Number.isFinite(payload.discountAmount) || payload.discountAmount <= 0) {
           throw new Error("Diskon nominal harus lebih dari 0.");
         }
-      } else {
-        if (!payload.bonusProductId) throw new Error("Bonus product wajib dipilih.");
+      }
+
+      if (payload.type === "BONUS_ITEM") {
+        if (!payload.bonusProductId) {
+          throw new Error("Bonus product wajib dipilih.");
+        }
+
         if (!Number.isFinite(payload.bonusQty) || payload.bonusQty <= 0) {
-          throw new Error("Bonus qty harus > 0.");
+          throw new Error("Bonus qty harus lebih dari 0.");
         }
       }
 
@@ -235,22 +356,30 @@ export default function AdminPromos() {
 
       resetForm();
       await load({ silent: true });
-    } catch (e2) {
-      setErr(e2?.message || "Gagal simpan promo");
+    } catch (error) {
+      setErr(error?.message || "Gagal simpan promo");
     }
   }
 
   async function toggleActive(p) {
     setErr("");
     setMsg("");
+
     try {
       const next = !(p.isActive ?? p.active);
+
       await apiPatch(`/api/admin/promos/${p.id}`, { isActive: next }, token);
+
       setMsg(`Promo ${next ? "diaktifkan" : "dinonaktifkan"}.`);
+
       await load({ silent: true });
-      setForm((f) => (f.id === p.id ? { ...f, isActive: next } : f));
-    } catch (e2) {
-      setErr(e2?.message || "Gagal ubah status promo");
+
+      setForm((current) => {
+        if (current.id !== p.id) return current;
+        return { ...current, isActive: next };
+      });
+    } catch (error) {
+      setErr(error?.message || "Gagal ubah status promo");
     }
   }
 
@@ -259,6 +388,7 @@ export default function AdminPromos() {
     setMsg("");
 
     const active = !!(p.isActive ?? p.active);
+
     if (active) {
       setErr("Nonaktifkan dulu sebelum hapus permanen.");
       return;
@@ -267,15 +397,18 @@ export default function AdminPromos() {
     const ok = window.confirm(
       `Hapus permanen promo "${p.name}"?\nTindakan ini tidak bisa dibatalkan.`
     );
+
     if (!ok) return;
 
     try {
       await apiDelete(`/api/admin/promos/${p.id}`, token);
+
       setMsg("Promo dihapus permanen.");
+
       resetForm();
       await load({ silent: true });
-    } catch (e) {
-      setErr(e?.message || "Gagal hapus promo");
+    } catch (error) {
+      setErr(error?.message || "Gagal hapus promo");
     }
   }
 
@@ -289,401 +422,496 @@ export default function AdminPromos() {
     await deletePromo(editingPromo);
   }
 
-  function logout() {
-    localStorage.removeItem("admin_token");
-    nav("/admin");
-  }
-
-  const visiblePromos = showInactive
-    ? promos
-    : (promos || []).filter((p) => (p.isActive ?? p.active) !== false);
-
   return (
-    <div className="adm-bg adm adm-promos">
+    <main className="adm-bg adm adm-promos">
       <div className="adm-shell">
-        <div className="adm-layout">
-          {/* SIDEBAR */}
-          <aside className="adm-nav">
-            <div className="adm-nav-card">
-              <div className="adm-nav-title">Admin</div>
-              <div className="adm-nav-sub">Kelola promo</div>
+        <section className="adm-main-card">
+          <div className="adm-header">
+            <div>
+              <h2 className="adm-h2">Kelola Promo</h2>
 
-              <div className="adm-nav-list">
-                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/dashboard")}>
-                  Live Report
-                </button>
-                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/products")}>
-                  Menu
-                </button>
-                <button className="adm-nav-item active" type="button" onClick={() => nav("/admin/promos")}>
-                  Promo
-                </button>
-                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/users")}>
-                  User Management
-                </button>
-                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/carts")}>
-                  Kelola Gerobak
-                </button>
-                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/reports")}>
-                  Laporan
-                </button>
-                <button className="adm-nav-item" type="button" onClick={() => nav("/admin/inventory")}>
-                  Stok
-                </button>
-              </div>
-
-              <div className="adm-nav-foot">
-                <button className="btn secondary" type="button" onClick={logout}>
-                  Logout
-                </button>
+              <div className="adm-subline">
+                <span>Tambah, edit, aktifkan, dan atur promo penjualan.</span>
               </div>
             </div>
-          </aside>
 
-          {/* MAIN */}
-          <main className="adm-main">
-            <div className="adm-main-card">
-              <div className="adm-header">
+            <div className="adm-actions">
+              <button className="btn secondary" type="button" onClick={() => load()}>
+                Refresh
+              </button>
+
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => nav("/admin/products")}
+              >
+                Produk
+              </button>
+
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={() => nav("/admin/dashboard")}
+              >
+                Dashboard
+              </button>
+            </div>
+          </div>
+
+          <div className="hr" />
+
+          {loading ? (
+            <div className="adm-alert" style={{ marginBottom: 12 }}>
+              <span className="loading-inline">
+                <span className="spinner spinner--sm" aria-hidden="true" />
+                Memuat promo...
+              </span>
+            </div>
+          ) : null}
+
+          {err ? (
+            <div className="adm-alert" role="alert" aria-live="polite" style={{ marginBottom: 12 }}>
+              {err}
+            </div>
+          ) : null}
+
+          {msg ? (
+            <div
+              className="adm-alert adm-alert--ok"
+              role="status"
+              aria-live="polite"
+              style={{ marginBottom: 12 }}
+            >
+              {msg}
+            </div>
+          ) : null}
+
+          <div className="adm-panels">
+            <StatCard label="Total Promo" value={promoStats.total} note="Semua promo." />
+            <StatCard label="Promo Aktif" value={promoStats.active} note="Bisa digunakan kasir." />
+            <StatCard label="Diskon" value={promoStats.discount} note="Persen dan nominal." />
+            <StatCard label="Bonus Item" value={promoStats.bonus} note="Promo produk gratis." />
+          </div>
+
+          <div className="adm-panels" style={{ marginTop: 14 }}>
+            <section className="adm-panel">
+              <div className="adm-panel-head">
                 <div>
-                  <h2 className="adm-h2">Kelola Promo</h2>
-                  <div className="adm-subline">
-                    <span className="muted">Klik promo untuk edit. Aksi ada di panel Edit.</span>
+                  <h3 className="adm-h3">{form.id ? "Edit Promo" : "Tambah Promo"}</h3>
+
+                  <div className="card-subtitle">
+                    {form.id
+                      ? "Ubah data promo yang dipilih."
+                      : "Buat promo baru untuk channel penjualan."}
                   </div>
                 </div>
 
-                <div className="adm-actions">
-                  <button className="btn secondary" type="button" onClick={() => load()}>
-                    Refresh
-                  </button>
-                  <button className="btn secondary" type="button" onClick={() => nav("/admin/dashboard")}>
-                    Kembali
-                  </button>
-                </div>
+                {form.id ? <span className="badge">Edit</span> : <span className="badge">Baru</span>}
               </div>
 
-              {loading ? (
-                <div className="adm-alert" style={{ marginTop: 12 }}>
-                  Loading...
+              <form onSubmit={submit} className="adm-form" style={{ marginTop: 14 }}>
+                <div className="adm-field">
+                  <label htmlFor="promo-name">Nama Promo</label>
+                  <input
+                    id="promo-name"
+                    className="input"
+                    value={form.name}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                    placeholder="Contoh: Diskon Weekend 10%"
+                  />
                 </div>
-              ) : null}
 
-              {err ? (
-                <div className="adm-alert" role="alert" aria-live="polite" style={{ marginTop: 12 }}>
-                  {err}
-                </div>
-              ) : null}
-
-              {msg ? (
-                <div className="adm-alert adm-alert--ok" role="status" aria-live="polite" style={{ marginTop: 12 }}>
-                  {msg}
-                </div>
-              ) : null}
-
-              <div className="adm-panels" style={{ marginTop: 14 }}>
-                {/* LEFT: FORM */}
-                <section className="adm-panel">
-                  <div className="adm-panel-head">
-                    <h3 className="adm-h3">{form.id ? "Edit Promo" : "Tambah Promo"}</h3>
-                    {form.id ? <span className="muted">ID: {form.id}</span> : <span className="muted">Create</span>}
+                <div className="adm-form-grid">
+                  <div className="adm-field">
+                    <label htmlFor="promo-type">Tipe Promo</label>
+                    <select
+                      id="promo-type"
+                      className="input"
+                      value={form.type}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          type: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="DISCOUNT_PERCENT">Diskon Persen</option>
+                      <option value="DISCOUNT_AMOUNT">Diskon Nominal</option>
+                      <option value="BONUS_ITEM">Bonus Item</option>
+                    </select>
                   </div>
 
-                  <form onSubmit={submit} className="adm-form">
-                    <div className="adm-field">
-                      <label>Nama Promo</label>
-                      <input
-                        className="input"
-                        value={form.name}
-                        onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                        placeholder="contoh: Diskon 10% Weekend"
-                      />
+                  <div className="adm-field">
+                    <label htmlFor="promo-channel">Channel Penjualan</label>
+                    <select
+                      id="promo-channel"
+                      className="input"
+                      value={form.salesChannel}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          salesChannel: normSalesChannel(event.target.value),
+                          bonusProductId: "",
+                        }))
+                      }
+                    >
+                      <option value="REGULAR">REGULAR</option>
+                      <option value="GOJEK">GOJEK</option>
+                      <option value="ALL">ALL</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="adm-field">
+                  <label htmlFor="promo-min-subtotal">Minimal Subtotal</label>
+                  <input
+                    id="promo-min-subtotal"
+                    className="input"
+                    type="number"
+                    min="0"
+                    value={form.minSubtotal}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        minSubtotal: event.target.value,
+                      }))
+                    }
+                    placeholder="0"
+                  />
+                  <div className="field-hint">Isi 0 jika promo tidak punya minimum transaksi.</div>
+                </div>
+
+                {form.type === "DISCOUNT_PERCENT" ? (
+                  <div className="adm-field">
+                    <label htmlFor="promo-discount-percent">Diskon Persen</label>
+                    <input
+                      id="promo-discount-percent"
+                      className="input"
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={form.discountPercent}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          discountPercent: event.target.value,
+                        }))
+                      }
+                      placeholder="10"
+                    />
+                    <div className="field-hint">Masukkan angka 1 sampai 100.</div>
+                  </div>
+                ) : null}
+
+                {form.type === "DISCOUNT_AMOUNT" ? (
+                  <div className="adm-field">
+                    <label htmlFor="promo-discount-amount">Diskon Nominal</label>
+                    <input
+                      id="promo-discount-amount"
+                      className="input"
+                      type="number"
+                      min="0"
+                      value={form.discountAmount}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          discountAmount: event.target.value,
+                        }))
+                      }
+                      placeholder="Contoh: 3000"
+                    />
+                  </div>
+                ) : null}
+
+                {form.type === "BONUS_ITEM" ? (
+                  <section className="adm-panel" style={{ marginTop: 4 }}>
+                    <div className="adm-panel-head">
+                      <div>
+                        <h3 className="adm-h3">Detail Bonus</h3>
+                        <div className="card-subtitle">
+                          Produk bonus mengikuti channel promo yang dipilih.
+                        </div>
+                      </div>
+
+                      <span className="badge">Bonus</span>
                     </div>
 
-                    <div className="adm-form-grid" style={{ marginTop: 10 }}>
+                    <div className="adm-form-grid" style={{ marginTop: 12 }}>
                       <div className="adm-field">
-                        <label>Tipe</label>
+                        <label htmlFor="bonus-product">Produk Bonus</label>
                         <select
+                          id="bonus-product"
                           className="input"
-                          value={form.type}
-                          onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
+                          value={form.bonusProductId}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              bonusProductId: event.target.value,
+                            }))
+                          }
                         >
-                          <option value="DISCOUNT_PERCENT">Diskon Persen</option>
-                          <option value="DISCOUNT_AMOUNT">Diskon Nominal</option>
-                          <option value="BONUS_ITEM">Bonus Item</option>
+                          <option value="">Pilih produk bonus</option>
+
+                          {channelMatchedProducts.map((product) => (
+                            <option key={product.id} value={product.id}>
+                              {product.name} ({product.sku})
+                            </option>
+                          ))}
                         </select>
                       </div>
 
                       <div className="adm-field">
-                        <label>Minimal Subtotal (Rp)</label>
+                        <label htmlFor="bonus-portion">Portion Bonus</label>
+                        <select
+                          id="bonus-portion"
+                          className="input"
+                          value={form.bonusPortion}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              bonusPortion: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="SMALL">SMALL</option>
+                          <option value="LARGE">LARGE</option>
+                        </select>
+                      </div>
+
+                      <div className="adm-field">
+                        <label htmlFor="bonus-qty">Qty Bonus</label>
                         <input
+                          id="bonus-qty"
                           className="input"
                           type="number"
-                          value={form.minSubtotal}
-                          onChange={(e) => setForm((f) => ({ ...f, minSubtotal: e.target.value }))}
+                          min="1"
+                          value={form.bonusQty}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              bonusQty: event.target.value,
+                            }))
+                          }
                         />
                       </div>
                     </div>
+                  </section>
+                ) : null}
 
-                    <div className="adm-field" style={{ marginTop: 10 }}>
-                      <label>Channel Penjualan</label>
-                      <select
+                <section className="adm-panel" style={{ marginTop: 4 }}>
+                  <div className="adm-panel-head">
+                    <div>
+                      <h3 className="adm-h3">Jadwal Promo</h3>
+                      <div className="card-subtitle">
+                        Kosongkan jika promo berlaku tanpa batas tanggal.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="adm-form-grid" style={{ marginTop: 12 }}>
+                    <div className="adm-field">
+                      <label htmlFor="promo-start">Mulai</label>
+                      <input
+                        id="promo-start"
                         className="input"
-                        value={form.salesChannel}
-                        onChange={(e) =>
-                          setForm((f) => ({
-                            ...f,
-                            salesChannel: normSalesChannel(e.target.value),
-                            bonusProductId: "",
+                        type="datetime-local"
+                        value={form.startAt}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            startAt: event.target.value,
                           }))
                         }
-                      >
-                        <option value="REGULAR">REGULAR</option>
-                        <option value="GOJEK">GOJEK</option>
-                        <option value="ALL">ALL</option>
-                      </select>
-                    </div>
-
-                    {form.type === "DISCOUNT_PERCENT" ? (
-                      <div className="adm-field" style={{ marginTop: 10 }}>
-                        <label>Diskon (%)</label>
-                        <input
-                          className="input"
-                          type="number"
-                          value={form.discountPercent}
-                          onChange={(e) => setForm((f) => ({ ...f, discountPercent: e.target.value }))}
-                        />
-                      </div>
-                    ) : form.type === "DISCOUNT_AMOUNT" ? (
-                      <div className="adm-field" style={{ marginTop: 10 }}>
-                        <label>Diskon Nominal (Rp)</label>
-                        <input
-                          className="input"
-                          type="number"
-                          value={form.discountAmount}
-                          onChange={(e) => setForm((f) => ({ ...f, discountAmount: e.target.value }))}
-                          placeholder="contoh: 3000"
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <div className="adm-form-grid" style={{ marginTop: 10 }}>
-                          <div className="adm-field">
-                            <label>Bonus Product</label>
-                            <select
-                              className="input"
-                              value={form.bonusProductId}
-                              onChange={(e) => setForm((f) => ({ ...f, bonusProductId: e.target.value }))}
-                            >
-                              <option value="">-- pilih product --</option>
-                              {channelMatchedProducts.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} ({p.sku})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div className="adm-field">
-                            <label>Portion Bonus</label>
-                            <select
-                              className="input"
-                              value={form.bonusPortion}
-                              onChange={(e) => setForm((f) => ({ ...f, bonusPortion: e.target.value }))}
-                            >
-                              <option value="SMALL">SMALL</option>
-                              <option value="LARGE">LARGE</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="adm-field" style={{ marginTop: 10 }}>
-                          <label>Bonus Qty</label>
-                          <input
-                            className="input"
-                            type="number"
-                            value={form.bonusQty}
-                            onChange={(e) => setForm((f) => ({ ...f, bonusQty: e.target.value }))}
-                          />
-                        </div>
-                      </>
-                    )}
-
-                    <div className="adm-form-grid" style={{ marginTop: 10 }}>
-                      <div className="adm-field">
-                        <label>Start (opsional)</label>
-                        <input
-                          className="input"
-                          type="datetime-local"
-                          value={form.startAt}
-                          onChange={(e) => setForm((f) => ({ ...f, startAt: e.target.value }))}
-                        />
-                      </div>
-
-                      <div className="adm-field">
-                        <label>End (opsional)</label>
-                        <input
-                          className="input"
-                          type="datetime-local"
-                          value={form.endAt}
-                          onChange={(e) => setForm((f) => ({ ...f, endAt: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="adm-actions-row" style={{ marginTop: 10 }}>
-                      <label className="adm-inline">
-                        <input
-                          type="checkbox"
-                          checked={!!form.isActive}
-                          onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-                        />
-                        <span>Aktif</span>
-                      </label>
-
-                      <div className="adm-actions-right">
-                        <button className="btn" type="submit">
-                          {form.id ? "Simpan Perubahan" : "Tambah Promo"}
-                        </button>
-                        {form.id ? (
-                          <button className="btn secondary" type="button" onClick={resetForm}>
-                            Batal
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    {/* EXTRA ACTIONS: hanya saat Edit */}
-                    {form.id ? (
-                      <div className="adm-edit-actions">
-                        <div className="adm-edit-status">
-                          <span className="muted">Status:</span>{" "}
-                          <span className={editingActive ? "adm-badge adm-badge--cash" : "adm-badge"}>
-                            {editingActive ? "ACTIVE" : "INACTIVE"}
-                          </span>
-                        </div>
-
-                        <div className="adm-edit-buttons">
-                          <button
-                            className={editingActive ? "btn danger" : "btn"}
-                            type="button"
-                            onClick={toggleEditingActive}
-                          >
-                            {editingActive ? "Nonaktifkan" : "Aktifkan"}
-                          </button>
-
-                          <button
-                            className="btn danger"
-                            type="button"
-                            onClick={deleteEditing}
-                            disabled={editingActive}
-                            title={editingActive ? "Nonaktifkan dulu untuk bisa hapus permanen" : "Hapus permanen"}
-                          >
-                            Hapus Permanen
-                          </button>
-                        </div>
-
-                        <div className="muted" style={{ fontSize: 12 }}>
-                          *Hapus permanen hanya bisa jika promo INACTIVE.
-                        </div>
-                      </div>
-                    ) : null}
-                  </form>
-                </section>
-
-                {/* RIGHT: LIST */}
-                <section className="adm-panel">
-                  <div className="adm-panel-head">
-                    <h3 className="adm-h3">Daftar Promo</h3>
-                    <label className="adm-inline">
-                      <input
-                        type="checkbox"
-                        checked={showInactive}
-                        onChange={(e) => setShowInactive(e.target.checked)}
                       />
-                      <span>Tampilkan INACTIVE</span>
-                    </label>
+                    </div>
+
+                    <div className="adm-field">
+                      <label htmlFor="promo-end">Selesai</label>
+                      <input
+                        id="promo-end"
+                        className="input"
+                        type="datetime-local"
+                        value={form.endAt}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            endAt: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
                   </div>
+                </section>
 
-                  <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                    Klik promo untuk edit (aksi ada di panel kiri).
-                  </div>
+                <div className="adm-field">
+                  <label>Status Promo</label>
 
-                  <div className="adm-list" role="list">
-                    {visiblePromos.map((p) => {
-                      const active = !!(p.isActive ?? p.active);
-                      const rule = buildRuleText(p);
-                      const start = p.startAt ? fmtLocal(p.startAt) : "";
-                      const end = p.endAt ? fmtLocal(p.endAt) : "";
+                  <label className="check-card">
+                    <input
+                      type="checkbox"
+                      checked={!!form.isActive}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          isActive: event.target.checked,
+                        }))
+                      }
+                    />
 
-                      const typeLabel =
-                        p.type === "DISCOUNT_PERCENT"
-                          ? "Diskon %"
-                          : p.type === "DISCOUNT_AMOUNT"
-                          ? "Diskon Nominal"
-                          : p.type === "BONUS_ITEM"
-                          ? "Bonus Item"
-                          : (p.type || "-");
+                    <div className="check-card__body">
+                      <span className="check-card__title">Promo aktif</span>
+                      <span className="check-card__sub">
+                        Jika aktif, promo akan tersedia sesuai jadwal dan channel.
+                      </span>
+                    </div>
 
-                      return (
-                        <div
-                          key={p.id}
-                          className="adm-list-item"
-                          role="listitem"
-                          tabIndex={0}
-                          onClick={() => editItem(p)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              editItem(p);
-                            }
-                          }}
-                          aria-label={`Edit promo ${p.name}`}
-                        >
-                          <div className="adm-list-top">
-                            <div className="adm-list-title" title={p.name}>
-                              {p.name}
-                            </div>
+                    <span className={`check-state ${form.isActive ? "active" : "inactive"}`}>
+                      {form.isActive ? "ACTIVE" : "INACTIVE"}
+                    </span>
+                  </label>
+                </div>
 
-                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                              <span className="adm-badge">
-                                {salesChannelLabel(p.salesChannel)}
-                              </span>
-
-                              <span className={active ? "adm-badge adm-badge--cash" : "adm-badge"}>
-                                {active ? "ACTIVE" : "INACTIVE"}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="adm-list-meta">
-                            <span className="adm-chip">{typeLabel}</span>
-                            <span className="muted">Min Rp {idr(p.minSubtotal || 0)}</span>
-                          </div>
-
-                          <div className="adm-list-rule">{rule}</div>
-
-                          {(start || end) ? (
-                            <div className="adm-list-window muted">
-                              {start ? `Mulai: ${start}` : "Mulai: -"}{" "}
-                              <span className="adm-dot">•</span>{" "}
-                              {end ? `Selesai: ${end}` : "Selesai: -"}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-
-                    {!visiblePromos.length ? (
-                      <div className="muted" style={{ padding: 10 }}>
-                        Belum ada promo.
+                <div className="adm-actions-row">
+                  <div>
+                    {form.id ? (
+                      <div className="adm-edit-status">
+                        <span className="muted">Status sekarang:</span>
+                        <span className={editingActive ? "adm-badge adm-badge--cash" : "adm-badge"}>
+                          {editingActive ? "ACTIVE" : "INACTIVE"}
+                        </span>
                       </div>
                     ) : null}
                   </div>
-                </section>
+
+                  <div className="adm-actions-right">
+                    {form.id ? (
+                      <>
+                        <button
+                          className={editingActive ? "btn danger" : "btn"}
+                          type="button"
+                          onClick={toggleEditingActive}
+                        >
+                          {editingActive ? "Nonaktifkan" : "Aktifkan"}
+                        </button>
+
+                        <button
+                          className="btn danger"
+                          type="button"
+                          onClick={deleteEditing}
+                          disabled={editingActive}
+                          title={editingActive ? "Nonaktifkan dulu untuk hapus permanen" : "Hapus permanen"}
+                        >
+                          Hapus
+                        </button>
+
+                        <button className="btn secondary" type="button" onClick={resetForm}>
+                          Batal
+                        </button>
+                      </>
+                    ) : null}
+
+                    <button className="btn" type="submit">
+                      {form.id ? "Simpan Perubahan" : "Tambah Promo"}
+                    </button>
+                  </div>
+                </div>
+
+                {form.id ? (
+                  <div className="field-hint">
+                    Hapus permanen hanya bisa dilakukan jika promo sudah INACTIVE.
+                  </div>
+                ) : null}
+              </form>
+            </section>
+
+            <section className="adm-panel">
+              <div className="adm-panel-head">
+                <div>
+                  <h3 className="adm-h3">Daftar Promo</h3>
+                  <div className="card-subtitle">Klik promo untuk masuk mode edit.</div>
+                </div>
+
+                <label className="check-compact">
+                  <input
+                    type="checkbox"
+                    checked={showInactive}
+                    onChange={(event) => setShowInactive(event.target.checked)}
+                  />
+                  <span>Tampilkan inactive</span>
+                </label>
               </div>
-            </div>
-          </main>
-        </div>
+
+              <div className="adm-list" role="list" style={{ marginTop: 14 }}>
+                {visiblePromos.map((promo) => {
+                  const active = !!(promo.isActive ?? promo.active);
+                  const start = promo.startAt ? fmtLocal(promo.startAt) : "";
+                  const end = promo.endAt ? fmtLocal(promo.endAt) : "";
+
+                  return (
+                    <button
+                      key={promo.id}
+                      type="button"
+                      className="adm-list-item"
+                      role="listitem"
+                      onClick={() => editItem(promo)}
+                      style={{ textAlign: "left", cursor: "pointer" }}
+                      aria-label={`Edit promo ${promo.name}`}
+                    >
+                      <div className="adm-list-top" style={{ alignItems: "center" }}>
+                        <div>
+                          <div className="adm-list-title" title={promo.name}>
+                            {promo.name}
+                          </div>
+
+                          <div className="adm-list-meta" style={{ marginTop: 6 }}>
+                            <span className="adm-chip">{typeLabel(promo.type)}</span>
+                            <span className="muted">Min Rp {idr(promo.minSubtotal || 0)}</span>
+                          </div>
+                        </div>
+
+                        <div className="adm-list-badges">
+                          <span className="adm-badge">{salesChannelLabel(promo.salesChannel)}</span>
+
+                          <span className={active ? "adm-badge adm-badge--cash" : "adm-badge"}>
+                            {active ? "ACTIVE" : "INACTIVE"}
+                          </span>
+
+                          <WindowBadge promo={promo} />
+                        </div>
+                      </div>
+
+                      <div className="adm-list-rule" style={{ marginTop: 10 }}>
+                        {buildRuleText(promo)}
+                      </div>
+
+                      {start || end ? (
+                        <div className="adm-list-window muted" style={{ marginTop: 8 }}>
+                          <span>Mulai: {start || "-"}</span>
+                          <span className="adm-dot">•</span>
+                          <span>Selesai: {end || "-"}</span>
+                        </div>
+                      ) : (
+                        <div className="adm-list-window muted" style={{ marginTop: 8 }}>
+                          Tanpa batas jadwal.
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+
+                {!visiblePromos.length ? (
+                  <div className="adm-list-item">
+                    <div className="adm-list-name">Belum ada promo.</div>
+                    <div className="muted">Tambahkan promo dari form di sebelah kiri.</div>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

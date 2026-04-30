@@ -1,99 +1,62 @@
 ﻿import React, { useState } from "react";
-import { apiPost } from "../api";
 import { useNavigate } from "react-router-dom";
-
-function IconAdmin() {
-  return (
-    <svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true">
-      <rect x="10" y="16" width="44" height="32" rx="10" fill="currentColor" opacity="0.16" />
-      <path
-        d="M32 18l3.2 7.2 7.8.7-5.9 5.1 1.8 7.6-6.9-4-6.9 4 1.8-7.6-5.9-5.1 7.8-.7L32 18z"
-        fill="currentColor"
-        opacity="0.95"
-      />
-      <rect x="18" y="44" width="28" height="6" rx="3" fill="currentColor" opacity="0.55" />
-    </svg>
-  );
-}
+import { apiPost } from "../api";
+import logo from "../assets/cbur-logo.png";
 
 export default function AdminLogin() {
-  const nav = useNavigate();
+  const navigate = useNavigate();
+
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  async function login(e) {
-    e.preventDefault();
+  async function login(event) {
+    event.preventDefault();
+
+    if (loading) return;
+
     setErr("");
+    setLoading(true);
+
     try {
-      // ✅ server tetap sama
       const res = await apiPost("/api/auth/admin", { password });
+
       localStorage.setItem("admin_token", res.token);
-      nav("/admin/dashboard");
-    } catch (e2) {
-      setErr(e2.message);
+      navigate("/admin/dashboard");
+    } catch (error) {
+      setErr(error?.message || "Login gagal. Coba lagi.");
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
-    <div className="auth-bg auth-theme-admin">
+    <main className="auth-bg auth-theme-admin">
       <div className="auth-shell">
         <div className="auth-center">
-          <div className="auth-card auth-card--split">
-            {/* LEFT: info */}
-            <div className="auth-side">
+          <section
+            className="auth-card"
+            style={{ width: "min(520px, 100%)" }}
+            aria-label="Login Admin"
+          >
+            <div className="auth-main">
               <div className="auth-side-head">
-                <div className="auth-icon" aria-hidden="true">
-                  <IconAdmin />
-                </div>
+                <img className="gate-logo" src={logo} alt="CBUR" />
+
                 <div>
                   <div className="auth-side-title">Admin</div>
-                  <div className="auth-side-sub">Kelola data & laporan</div>
+                  <div className="auth-side-sub">Kelola operasional CBUR</div>
                 </div>
               </div>
 
-              <div className="auth-side-list">
-                <div className="auth-side-item">
-                  <span className="auth-bullet" />
-                  <div>
-                    <div className="auth-side-item-title">Produk & harga</div>
-                    <div className="auth-side-item-sub">Update menu, stok, dan harga jual.</div>
-                  </div>
-                </div>
+              <div className="hr" />
 
-                <div className="auth-side-item">
-                  <span className="auth-bullet" />
-                  <div>
-                    <div className="auth-side-item-title">Promo</div>
-                    <div className="auth-side-item-sub">Atur diskon & campaign.</div>
-                  </div>
-                </div>
-
-                <div className="auth-side-item">
-                  <span className="auth-bullet" />
-                  <div>
-                    <div className="auth-side-item-title">Users & akses</div>
-                    <div className="auth-side-item-sub">Kelola akun kasir/mitra.</div>
-                  </div>
-                </div>
-
-                <div className="auth-side-item">
-                  <span className="auth-bullet" />
-                  <div>
-                    <div className="auth-side-item-title">Reports</div>
-                    <div className="auth-side-item-sub">Pantau penjualan & export laporan.</div>
-                  </div>
-                </div>
+              <div>
+                <h1 className="auth-title">Login Admin</h1>
+                <p className="auth-subtitle">
+                  Masukkan password admin untuk masuk ke dashboard.
+                </p>
               </div>
-
-              <div className="auth-side-foot">Gunakan akun Admin resmi.</div>
-            </div>
-
-            {/* RIGHT: form */}
-            <div className="auth-main">
-              <div className="auth-title">Login Admin</div>
-              <div className="auth-subtitle">Masukkan password untuk masuk ke dashboard.</div>
-
-              
 
               {err && (
                 <div className="auth-alert" role="alert" aria-live="polite">
@@ -103,31 +66,49 @@ export default function AdminLogin() {
 
               <form onSubmit={login} className="auth-form">
                 <div className="auth-field">
-                  <label className="auth-label" htmlFor="password">
+                  <label className="auth-label" htmlFor="admin-password">
                     Password
                   </label>
+
                   <input
-                    id="password"
+                    id="admin-password"
                     className="auth-input"
                     type="password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(event) => setPassword(event.target.value)}
                     autoComplete="current-password"
                     required
+                    disabled={loading}
+                    placeholder="Masukkan password"
                   />
                 </div>
 
-                <button className="auth-btn auth-btn--admin" type="submit" disabled={!password}>
-                  <span>Masuk</span>
-                  <span aria-hidden="true">→</span>
+                <button
+                  className="auth-btn auth-btn--admin"
+                  type="submit"
+                  disabled={!password || loading}
+                >
+                  {loading ? (
+                    <>
+                      <span className="spinner spinner--sm" aria-hidden="true" />
+                      <span>Memproses...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Masuk Admin</span>
+                      <span aria-hidden="true">→</span>
+                    </>
+                  )}
                 </button>
 
-                <div className="auth-hint">Pastikan Anda menggunakan akun Admin yang benar.</div>
+                <div className="auth-hint">
+                  Akses ini khusus untuk pengelola produk, stok, promo, user, dan laporan.
+                </div>
               </form>
             </div>
-          </div>
+          </section>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
