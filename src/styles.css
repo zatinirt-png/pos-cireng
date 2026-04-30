@@ -4926,3 +4926,519 @@ input[type="radio"]:focus {
     font-size: 9.5px !important;
   }
 }
+
+/* =========================================================
+   CASHIER POS V5 - OPEN SHIFT CLEAN UI
+   Paste at the bottom of client/src/styles.css
+   ========================================================= */
+
+.cashier-v5-shell .c5-open-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.cashier-v5-shell .c5-open-main,
+.cashier-v5-shell .c5-open-side {
+  border-radius: 24px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff;
+  box-shadow: 0 16px 38px rgba(60, 45, 38, 0.055);
+}
+
+.cashier-v5-shell .c5-open-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.cashier-v5-shell .c5-open-refresh {
+  width: 100%;
+}
+
+.cashier-v5-shell .c5-open-section-title {
+  display: grid;
+  gap: 4px;
+  padding-top: 12px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+  border-top: 1px solid rgba(224, 192, 177, 0.62);
+}
+
+.cashier-v5-shell .c5-open-section-title h4 {
+  margin: 0;
+  color: #251913;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.cashier-v5-shell .c5-open-section-title p {
+  margin: 0;
+  color: #6b5146;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.cashier-v5-shell .c5-open-stock-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cashier-v5-shell .c5-open-stock-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  border-radius: 18px;
+  background: #fff8f6;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+}
+
+.cashier-v5-shell .c5-open-stock-card.is-selected {
+  border-color: rgba(159, 66, 0, 0.42);
+  background: #fff1eb;
+  box-shadow: 0 10px 22px rgba(159, 66, 0, 0.06);
+}
+
+.cashier-v5-shell .c5-open-stock-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .c5-open-stock-check input {
+  margin-top: 2px;
+}
+
+.cashier-v5-shell .c5-open-stock-check span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cashier-v5-shell .c5-open-stock-check b {
+  color: #251913;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.cashier-v5-shell .c5-open-stock-check small {
+  color: #8c7165;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.cashier-v5-shell .c5-open-stock-input {
+  display: grid;
+  gap: 6px;
+}
+
+.cashier-v5-shell .c5-open-stock-input span {
+  color: #6b5146;
+  font-size: 10.5px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cashier-v5-shell .c5-open-stock-input input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.cashier-v5-shell .c5-open-stock-input input:disabled {
+  background: #f8f1ee;
+  color: #a18b80;
+  cursor: not-allowed;
+}
+
+.cashier-v5-shell .c5-open-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  margin-top: 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff1eb;
+}
+
+.cashier-v5-shell .c5-open-footer span {
+  display: block;
+  color: #6b5146;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.cashier-v5-shell .c5-open-footer strong {
+  display: block;
+  margin-top: 4px;
+  color: #9f4200;
+  font-size: 24px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.cashier-v5-shell .c5-open-submit {
+  width: 100%;
+  min-height: 48px;
+}
+
+.cashier-v5-shell .c5-open-side {
+  position: sticky;
+  top: 132px;
+}
+
+.cashier-v5-shell .c5-central-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.cashier-v5-shell .c5-central-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  border-radius: 14px;
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .c5-central-card span {
+  min-width: 0;
+  color: #594237;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.cashier-v5-shell .c5-central-card b {
+  flex: 0 0 auto;
+  color: #251913;
+  font-size: 12px;
+  font-weight: 950;
+  text-align: right;
+}
+
+/* compact desktop */
+@media (min-width: 1241px) {
+  .cashier-v5-shell .c5-open-main,
+  .cashier-v5-shell .c5-open-side {
+    padding: 14px;
+  }
+
+  .cashier-v5-shell .c5-open-stock-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cashier-v5-shell .c5-open-stock-card {
+    padding: 11px;
+    gap: 10px;
+  }
+}
+
+/* tablet */
+@media (max-width: 1240px) {
+  .cashier-v5-shell .c5-open-page {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-open-side {
+    position: relative;
+    top: auto;
+  }
+
+  .cashier-v5-shell .c5-open-stock-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cashier-v5-shell .c5-central-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* mobile */
+@media (max-width: 720px) {
+  .cashier-v5-shell .c5-open-toolbar,
+  .cashier-v5-shell .c5-open-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-open-stock-grid,
+  .cashier-v5-shell .c5-central-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-open-footer strong {
+    font-size: 22px;
+  }
+}
+
+/* =========================================================
+   CASHIER POS V5 - CLOSE SHIFT MODAL POLISH
+   ========================================================= */
+
+.cashier-v5-shell .modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(37, 25, 19, 0.36);
+  backdrop-filter: blur(8px);
+}
+
+.cashier-v5-shell .c5-close-shift-modal {
+  width: min(680px, calc(100vw - 28px));
+  overflow: hidden;
+  border-radius: 26px;
+  border: 1px solid rgba(224, 192, 177, 0.78);
+  background: #ffffff;
+  box-shadow: 0 30px 90px rgba(37, 25, 19, 0.26);
+}
+
+.cashier-v5-shell .c5-close-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 20px;
+  background: linear-gradient(135deg, #fff8f6, #fff1eb);
+  border-bottom: 1px solid rgba(224, 192, 177, 0.62);
+}
+
+.cashier-v5-shell .c5-close-eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: #9f4200;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.cashier-v5-shell .c5-close-head h3 {
+  margin: 0;
+  color: #251913;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.cashier-v5-shell .c5-close-head p {
+  margin: 7px 0 0;
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.cashier-v5-shell .c5-close-x {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(224, 192, 177, 0.78);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #594237;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .c5-close-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 20px 0;
+}
+
+.cashier-v5-shell .c5-close-stat {
+  display: grid;
+  gap: 5px;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  border-radius: 18px;
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .c5-close-stat span {
+  color: #8c7165;
+  font-size: 10.5px;
+  font-weight: 950;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.cashier-v5-shell .c5-close-stat strong {
+  color: #251913;
+  font-size: 20px;
+  font-weight: 950;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.cashier-v5-shell .c5-close-stat small {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+}
+
+.cashier-v5-shell .c5-close-stat--ok {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: #f0fdf4;
+}
+
+.cashier-v5-shell .c5-close-stat--ok small {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.cashier-v5-shell .c5-close-stat--plus {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: #fffbeb;
+}
+
+.cashier-v5-shell .c5-close-stat--plus small {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.cashier-v5-shell .c5-close-stat--minus {
+  border-color: rgba(186, 26, 26, 0.28);
+  background: #fff1f0;
+}
+
+.cashier-v5-shell .c5-close-stat--minus small {
+  color: #93000a;
+  background: #ffdad6;
+}
+
+.cashier-v5-shell .c5-close-input-box {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.cashier-v5-shell .c5-close-input-box .c5-field {
+  display: grid;
+  gap: 7px;
+}
+
+.cashier-v5-shell .c5-close-input-box .c5-field span {
+  color: #594237;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-close-input-box input {
+  min-height: 56px;
+  border-radius: 16px;
+  font-size: 22px;
+  font-weight: 950;
+  padding: 10px 14px;
+}
+
+.cashier-v5-shell .c5-close-note {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .c5-close-note b {
+  color: #251913;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-close-note span {
+  color: #6b5146;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.cashier-v5-shell .c5-close-note--ok {
+  border-color: rgba(34, 197, 94, 0.3);
+  background: #f0fdf4;
+}
+
+.cashier-v5-shell .c5-close-note--plus {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: #fffbeb;
+}
+
+.cashier-v5-shell .c5-close-note--minus {
+  border-color: rgba(186, 26, 26, 0.28);
+  background: #fff1f0;
+}
+
+.cashier-v5-shell .c5-close-footer {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 10px;
+  padding: 16px 20px 20px;
+  border-top: 1px solid rgba(224, 192, 177, 0.62);
+  background: #fffaf8;
+}
+
+.cashier-v5-shell .c5-close-footer .btn {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 16px;
+  font-size: 14px;
+}
+
+.cashier-v5-shell .c5-close-submit {
+  font-size: 15px !important;
+}
+
+@media (max-width: 720px) {
+  .cashier-v5-shell .c5-close-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-close-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-close-head {
+    padding: 16px;
+  }
+
+  .cashier-v5-shell .c5-close-stats,
+  .cashier-v5-shell .c5-close-input-box,
+  .cashier-v5-shell .c5-close-footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}

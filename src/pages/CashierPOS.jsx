@@ -1297,16 +1297,16 @@ export default function CashierPOS() {
 
   function renderShiftClosed() {
     return (
-      <div className="cashier-open-layout">
-        <section className="pos-card cashier-card cashier-card--main">
+      <div className="c5-open-page">
+        <section className="pos-card c5-card c5-open-main">
           <SectionTitle
             title="Buka Shift"
             subtitle="Isi kas awal dan pilih stok awal yang dibawa ke gerobak."
             action={<span className="pill pill--neutral">Shift Closed</span>}
           />
 
-          <div className="cashier-open-top">
-            <label className="cashier-field">
+          <div className="c5-open-toolbar">
+            <label className="c5-field">
               <span>Kas awal</span>
               <input
                 type="number"
@@ -1318,7 +1318,7 @@ export default function CashierPOS() {
             </label>
 
             <button
-              className="btn secondary"
+              className="btn secondary c5-open-refresh"
               type="button"
               onClick={() => loadOpeningStocks({ preserve: true })}
               disabled={invLoading}
@@ -1329,59 +1329,82 @@ export default function CashierPOS() {
 
           <Alert type="danger">{invErr}</Alert>
 
+          <div className="c5-open-section-title">
+            <h4>Stok Awal Gerobak</h4>
+            <p>Pilih stok yang dibawa untuk shift ini. Cireng wajib dipilih jika tersedia.</p>
+          </div>
+
           {!invStocks.length ? (
             <EmptyState>Belum ada data stok gerobak.</EmptyState>
           ) : (
-            <div className="cashier-open-stock-list">
-              {invStocks.map((stock) => (
-                <div key={stock.id} className="cashier-open-stock-row">
-                  <label className="cashier-check">
-                    <input
-                      type="checkbox"
-                      checked={!!openStockChecked[stock.id]}
-                      onChange={(e) =>
-                        setOpenStockChecked((prev) => ({
-                          ...prev,
-                          [stock.id]: e.target.checked,
-                        }))
-                      }
-                    />
-                    <span>
-                      <b>{stock.name}</b>
-                      <small>
-                        Sisa cart: {Number(stock.qty || 0)} {stock.unit || ""}
-                      </small>
-                    </span>
-                  </label>
+            <div className="c5-open-stock-grid">
+              {invStocks.map((stock) => {
+                const checked = !!openStockChecked[stock.id];
 
-                  <input
-                    type="number"
-                    min="0"
-                    value={openStockQty[stock.id] ?? 0}
-                    disabled={!openStockChecked[stock.id]}
-                    onChange={(e) =>
-                      setOpenStockQty((prev) => ({
-                        ...prev,
-                        [stock.id]: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-              ))}
+                return (
+                  <article
+                    key={stock.id}
+                    className={`c5-open-stock-card ${checked ? "is-selected" : ""}`}
+                  >
+                    <label className="c5-open-stock-check">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setOpenStockChecked((prev) => ({
+                            ...prev,
+                            [stock.id]: e.target.checked,
+                          }))
+                        }
+                      />
+
+                      <span>
+                        <b>{stock.name}</b>
+                        <small>
+                          Sisa cart: {Number(stock.qty || 0)} {stock.unit || ""}
+                        </small>
+                      </span>
+                    </label>
+
+                    <label className="c5-open-stock-input">
+                      <span>Qty dibawa</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={openStockQty[stock.id] ?? 0}
+                        disabled={!checked}
+                        onChange={(e) =>
+                          setOpenStockQty((prev) => ({
+                            ...prev,
+                            [stock.id]: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </article>
+                );
+              })}
             </div>
           )}
 
-          <button
-            className="btn primary cashier-wide-action"
-            type="button"
-            onClick={openShift}
-            disabled={openShiftBusy}
-          >
-            {openShiftBusy ? "Membuka Shift..." : "Buka Shift"}
-          </button>
+          <div className="c5-open-footer">
+            <div>
+              <span>Kas awal</span>
+              <strong>{rupiah(openingCash)}</strong>
+            </div>
+
+            <button
+              className="btn primary c5-open-submit"
+              type="button"
+              onClick={openShift}
+              disabled={openShiftBusy}
+            >
+              {openShiftBusy ? "Membuka Shift..." : "Buka Shift"}
+            </button>
+          </div>
         </section>
 
-        <aside className="pos-card cashier-card cashier-card--side">
+        <aside className="pos-card c5-card c5-open-side">
           <SectionTitle
             title="Ringkasan Stok Central"
             subtitle="Referensi stok pusat sebelum shift dibuka."
@@ -1390,9 +1413,9 @@ export default function CashierPOS() {
           {!invCentralStocks.length ? (
             <EmptyState>Belum ada stok central.</EmptyState>
           ) : (
-            <div className="cashier-mini-list">
-              {invCentralStocks.slice(0, 12).map((stock) => (
-                <div key={stock.id} className="cashier-mini-row">
+            <div className="c5-central-grid">
+              {invCentralStocks.slice(0, 16).map((stock) => (
+                <div key={stock.id} className="c5-central-card">
                   <span>{stock.name}</span>
                   <b>
                     {Number(stock.qty || 0)} {stock.unit || ""}
@@ -2186,30 +2209,7 @@ export default function CashierPOS() {
           </div>
         </section>
 
-        <section className="pos-card cashier-card">
-          <SectionTitle title="Status Sistem" subtitle="Informasi cepat status kasir." />
-
-          <div className="cashier-mini-list">
-            <div className="cashier-mini-row">
-              <span>Cart</span>
-              <b>{cartName}</b>
-            </div>
-            <div className="cashier-mini-row">
-              <span>Meta Sync</span>
-              <b>{syncText}</b>
-            </div>
-            <div className="cashier-mini-row">
-              <span>Antrian Regular</span>
-              <b>{regularQueue.length}</b>
-            </div>
-            <div className="cashier-mini-row">
-              <span>Antrian Gojek</span>
-              <b>{gojekQueue.length}</b>
-            </div>
-          </div>
-
-          <Alert type="danger">{metaSyncErr}</Alert>
-        </section>
+        
       </div>
     );
   }
@@ -2217,43 +2217,99 @@ export default function CashierPOS() {
   function renderCloseShiftModal() {
     if (!closeShiftOpen) return null;
 
+    const expectedCash = Number(summary?.expectedCash || 0);
+    const physicalCash = Number(closingCash || 0);
+    const variance = physicalCash - expectedCash;
+
+    const varianceLabel = variance === 0 ? "PAS" : variance > 0 ? "LEBIH" : "KURANG";
+    const varianceTone = variance === 0 ? "ok" : variance > 0 ? "plus" : "minus";
+
     return (
       <div className="modal-backdrop">
-        <div className="modal-card cashier-close-modal">
-          <div className="modal-head">
+        <div className="modal-card c5-close-shift-modal">
+          <div className="c5-close-head">
             <div>
+              <span className="c5-close-eyebrow">Closing Shift</span>
               <h3>Konfirmasi Tutup Shift</h3>
-              <p>Pastikan kas fisik sudah dihitung.</p>
+              <p>Pastikan kas fisik sudah dihitung sebelum menutup shift.</p>
             </div>
-            <button className="icon-btn" type="button" onClick={() => setCloseShiftOpen(false)}>
+
+            <button
+              className="c5-close-x"
+              type="button"
+              onClick={() => setCloseShiftOpen(false)}
+              aria-label="Tutup"
+            >
               ×
             </button>
           </div>
 
-          <section className="cashier-summary-bar cashier-summary-bar--compact">
-            <Kpi label="Expected Cash" value={rupiah(summary?.expectedCash)} />
-            <Kpi label="Kas Fisik" value={rupiah(closingCash)} />
-            <Kpi
-              label="Selisih"
-              value={rupiah(Math.abs(Number(closingCash || 0) - Number(summary?.expectedCash || 0)))}
-            />
-          </section>
+          <div className="c5-close-stats">
+            <div className="c5-close-stat">
+              <span>Expected Cash</span>
+              <strong>{rupiah(expectedCash)}</strong>
+            </div>
 
-          <label className="cashier-field">
-            <span>Kas fisik</span>
-            <input
-              type="number"
-              min="0"
-              value={closingCash}
-              onChange={(e) => setClosingCash(e.target.value)}
-            />
-          </label>
+            <div className="c5-close-stat">
+              <span>Kas Fisik</span>
+              <strong>{rupiah(physicalCash)}</strong>
+            </div>
 
-          <div className="modal-footer">
-            <button className="btn secondary" type="button" onClick={() => setCloseShiftOpen(false)}>
+            <div className={`c5-close-stat c5-close-stat--${varianceTone}`}>
+              <span>Selisih</span>
+              <strong>{rupiah(Math.abs(variance))}</strong>
+              <small>{varianceLabel}</small>
+            </div>
+          </div>
+
+          <div className="c5-close-input-box">
+            <label className="c5-field">
+              <span>Masukkan kas fisik</span>
+              <input
+                type="number"
+                min="0"
+                value={closingCash}
+                onChange={(e) => setClosingCash(e.target.value)}
+                placeholder="0"
+                autoFocus
+              />
+            </label>
+
+            <div className={`c5-close-note c5-close-note--${varianceTone}`}>
+              {variance === 0 ? (
+                <>
+                  <b>Kas sudah sesuai.</b>
+                  <span>Shift dapat ditutup tanpa selisih.</span>
+                </>
+              ) : variance > 0 ? (
+                <>
+                  <b>Kas lebih {rupiah(Math.abs(variance))}.</b>
+                  <span>Pastikan tidak ada transaksi/cash in yang belum tercatat.</span>
+                </>
+              ) : (
+                <>
+                  <b>Kas kurang {rupiah(Math.abs(variance))}.</b>
+                  <span>Periksa ulang transaksi, cash out, dan kas fisik sebelum menutup shift.</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="c5-close-footer">
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={() => setCloseShiftOpen(false)}
+            >
               Batal
             </button>
-            <button className="btn danger" type="button" onClick={closeShift} disabled={closeShiftBusy}>
+
+            <button
+              className="btn danger c5-close-submit"
+              type="button"
+              onClick={closeShift}
+              disabled={closeShiftBusy}
+            >
               {closeShiftBusy ? "Menutup..." : "Tutup Shift"}
             </button>
           </div>
