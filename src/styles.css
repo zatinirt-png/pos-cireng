@@ -2856,3 +2856,2073 @@ input[type="radio"]:focus {
     font-size: 28px;
   }
 }
+/* =========================================================
+   CASHIER POS V5 - CLEAN SIMPLE CASHIER UI
+   Root: .cashier-v5-shell
+   ========================================================= */
+
+.cashier-v5-shell {
+  width: min(100%, 1560px);
+  margin: 0 auto;
+  padding: 14px;
+  color: #251913;
+}
+
+.cashier-v5-shell * {
+  box-sizing: border-box;
+}
+
+.cashier-v5-shell input,
+.cashier-v5-shell select,
+.cashier-v5-shell textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(224, 192, 177, 0.82);
+  border-radius: 14px;
+  background: #fff;
+  color: #251913;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+}
+
+.cashier-v5-shell textarea {
+  resize: vertical;
+  min-height: 68px;
+}
+
+.cashier-v5-shell input:focus,
+.cashier-v5-shell select:focus,
+.cashier-v5-shell textarea:focus {
+  border-color: rgba(159, 66, 0, 0.55);
+  box-shadow: 0 0 0 4px rgba(159, 66, 0, 0.1);
+}
+
+.cashier-v5-shell input[type="checkbox"] {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
+  padding: 0 !important;
+  accent-color: #9f4200;
+}
+
+/* header */
+
+.cashier-v5-shell .cashier-header {
+  position: sticky;
+  top: 10px;
+  z-index: 30;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: rgba(255, 248, 246, 0.92);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 16px 40px rgba(60, 45, 38, 0.08);
+}
+
+.cashier-v5-shell .cashier-header__main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.cashier-v5-shell .cashier-header__eyebrow {
+  margin: 0 0 4px;
+  color: #8c7165;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cashier-v5-shell .cashier-header__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* buttons */
+
+.cashier-v5-shell .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cashier-v5-shell .btn--sm {
+  min-height: 36px;
+  padding: 8px 11px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.cashier-v5-shell .btn.primary {
+  color: #fff;
+  background: #9f4200;
+  border-color: #9f4200;
+}
+
+.cashier-v5-shell .btn.secondary {
+  color: #4b3429;
+  background: #fff8f6;
+  border-color: rgba(224, 192, 177, 0.9);
+}
+
+.cashier-v5-shell .btn.danger {
+  color: #fff;
+  background: #ba1a1a;
+  border-color: #ba1a1a;
+}
+
+/* nav */
+
+.cashier-v5-shell .cashier-nav-card {
+  padding: 8px;
+  border-radius: 22px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: rgba(255, 248, 246, 0.86);
+}
+
+/* shared */
+
+.cashier-v5-shell .c5-card,
+.cashier-v5-shell .cashier-card {
+  min-width: 0;
+  padding: 16px;
+  border-radius: 24px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff;
+  box-shadow: 0 16px 38px rgba(60, 45, 38, 0.055);
+}
+
+.cashier-v5-shell .cashier-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.cashier-v5-shell .cashier-section-head h3 {
+  margin: 0;
+  color: #251913;
+  font-size: 18px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.cashier-v5-shell .cashier-section-head p {
+  margin: 4px 0 0;
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* alerts */
+
+.cashier-v5-shell .cashier-alert {
+  padding: 10px 12px;
+  margin-top: 10px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cashier-v5-shell .cashier-alert--ok {
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.cashier-v5-shell .cashier-alert--danger {
+  color: #93000a;
+  background: #ffdad6;
+  border: 1px solid rgba(186, 26, 26, 0.18);
+}
+
+.cashier-v5-shell .cashier-empty {
+  display: grid;
+  place-items: center;
+  min-height: 92px;
+  padding: 16px;
+  border: 1px dashed rgba(140, 113, 101, 0.42);
+  border-radius: 18px;
+  background: #fff8f6;
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+/* sell layout */
+
+.cashier-v5-shell .c5-sell-page {
+  display: grid;
+  gap: 14px;
+}
+
+.cashier-v5-shell .c5-sell-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.05fr) minmax(360px, 0.95fr) minmax(290px, 0.72fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.cashier-v5-shell .c5-menu-panel {
+  height: calc(100vh - 226px);
+  min-height: 610px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cashier-v5-shell .c5-draft-panel {
+  min-height: 610px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.cashier-v5-shell .cashier-card--queue {
+  position: sticky;
+  top: 132px;
+  max-height: calc(100vh - 148px);
+  overflow: auto;
+}
+
+/* top stats */
+
+.cashier-v5-shell .c5-top-stats,
+.cashier-v5-shell .cashier-summary-bar {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1fr 1.25fr;
+  gap: 10px;
+}
+
+.cashier-v5-shell .cashier-summary-bar--compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cashier-v5-shell .cashier-kpi {
+  min-width: 0;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff;
+}
+
+.cashier-v5-shell .cashier-kpi--soft {
+  background: #fff1eb;
+}
+
+.cashier-v5-shell .cashier-kpi span {
+  display: block;
+  color: #8c7165;
+  font-size: 10.5px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cashier-v5-shell .cashier-kpi strong {
+  display: block;
+  margin-top: 5px;
+  color: #251913;
+  font-size: 17px;
+  font-weight: 950;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.cashier-v5-shell .cashier-kpi small {
+  display: block;
+  margin-top: 4px;
+  color: #8c7165;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* menu */
+
+.cashier-v5-shell .c5-search {
+  margin-bottom: 12px;
+}
+
+.cashier-v5-shell .c5-menu-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.cashier-v5-shell .c5-menu-card {
+  display: grid;
+  gap: 12px;
+  min-height: 128px;
+  padding: 14px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  border-radius: 18px;
+  background: #fff;
+}
+
+.cashier-v5-shell .c5-menu-card__name h4 {
+  margin: 0;
+  color: #251913;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.cashier-v5-shell .c5-menu-card__name p {
+  margin: 4px 0 0;
+  color: #8c7165;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.cashier-v5-shell .c5-menu-card__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.cashier-v5-shell .c5-menu-card__actions button {
+  min-width: 0;
+  min-height: 50px;
+  border: 1px solid rgba(224, 192, 177, 0.86);
+  border-radius: 14px;
+  background: #fff8f6;
+  color: #251913;
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .c5-menu-card__actions button:hover {
+  background: #fff1eb;
+  border-color: rgba(159, 66, 0, 0.32);
+}
+
+.cashier-v5-shell .c5-menu-card__actions span {
+  display: block;
+  color: #8c7165;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.cashier-v5-shell .c5-menu-card__actions b {
+  display: block;
+  margin-top: 4px;
+  color: #251913;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+/* draft */
+
+.cashier-v5-shell .c5-draft-summary {
+  display: grid;
+  grid-template-columns: 1fr 0.7fr 1.2fr;
+  gap: 8px;
+}
+
+.cashier-v5-shell .c5-draft-summary > div {
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .c5-draft-summary span {
+  display: block;
+  color: #8c7165;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.cashier-v5-shell .c5-draft-summary b {
+  display: block;
+  margin-top: 5px;
+  color: #251913;
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-form-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.cashier-v5-shell .c5-field {
+  display: grid;
+  gap: 7px;
+}
+
+.cashier-v5-shell .c5-field span {
+  color: #594237;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-draft-items {
+  display: grid;
+  gap: 10px;
+}
+
+.cashier-v5-shell .c5-draft-empty {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  min-height: 120px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px dashed rgba(140, 113, 101, 0.42);
+  background: #fff8f6;
+  text-align: center;
+}
+
+.cashier-v5-shell .c5-draft-empty b {
+  color: #251913;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-draft-empty span {
+  color: #8c7165;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cashier-v5-shell .c5-draft-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff;
+}
+
+.cashier-v5-shell .c5-draft-item__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cashier-v5-shell .c5-draft-item h4 {
+  margin: 0;
+  color: #251913;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-draft-item p {
+  margin: 4px 0 0;
+  color: #8c7165;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cashier-v5-shell .c5-draft-item strong {
+  color: #251913;
+  font-size: 14px;
+  font-weight: 950;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cashier-v5-shell .c5-draft-item__bottom {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.cashier-v5-shell .c5-qty {
+  display: grid;
+  grid-template-columns: 32px 38px 32px;
+  align-items: center;
+  gap: 5px;
+}
+
+.cashier-v5-shell .c5-qty button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff1eb;
+  color: #251913;
+  font-size: 18px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .c5-qty b {
+  text-align: center;
+  color: #251913;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-remove {
+  border: 0;
+  background: transparent;
+  color: #ba1a1a;
+  font-size: 12px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .c5-draft-footer {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+  padding: 14px;
+  border-radius: 20px;
+  background: #fff1eb;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+}
+
+.cashier-v5-shell .c5-draft-footer > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.cashier-v5-shell .c5-draft-footer span {
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-draft-footer strong {
+  color: #9f4200;
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .c5-draft-footer small {
+  color: #6b5146;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.cashier-v5-shell .c5-send-queue {
+  width: 100%;
+  min-height: 52px;
+}
+
+/* queue */
+
+.cashier-v5-shell .cashier-queue-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.cashier-v5-shell .cashier-queue-list {
+  display: grid;
+  gap: 10px;
+}
+
+.cashier-v5-shell .cashier-queue-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .cashier-queue-card.is-paid {
+  border-color: rgba(34, 197, 94, 0.32);
+  background: #f0fdf4;
+}
+
+.cashier-v5-shell .cashier-queue-card__top,
+.cashier-v5-shell .cashier-queue-card__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cashier-v5-shell .cashier-queue-card h4 {
+  margin: 0;
+  color: #251913;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .cashier-queue-card p {
+  margin: 4px 0 0;
+  color: #8c7165;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cashier-v5-shell .cashier-queue-card__bottom b {
+  color: #251913;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+/* checkout tetap dipakai dari class lama, tapi distabilkan */
+
+.cashier-v5-shell .cashier-checkout-page {
+  display: grid;
+  gap: 14px;
+}
+
+.cashier-v5-shell .cashier-checkout-topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 24px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .cashier-checkout-topbar h2 {
+  margin: 0;
+  color: #251913;
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .cashier-checkout-topbar p {
+  margin: 4px 0 0;
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cashier-v5-shell .cashier-checkout-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(380px, 0.75fr);
+  gap: 14px;
+  align-items: start;
+}
+
+/* responsive */
+
+@media (max-width: 1240px) {
+  .cashier-v5-shell .c5-sell-grid,
+  .cashier-v5-shell .cashier-checkout-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-menu-panel {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .cashier-v5-shell .c5-menu-grid {
+    overflow: visible;
+  }
+
+  .cashier-v5-shell .cashier-card--queue {
+    position: relative;
+    top: auto;
+    max-height: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .cashier-v5-shell {
+    padding: 10px;
+  }
+
+  .cashier-v5-shell .cashier-header__main {
+    flex-direction: column;
+  }
+
+  .cashier-v5-shell .cashier-header__actions {
+    width: 100%;
+  }
+
+  .cashier-v5-shell .cashier-header__actions .btn {
+    flex: 1;
+  }
+
+  .cashier-v5-shell .c5-top-stats,
+  .cashier-v5-shell .cashier-summary-bar,
+  .cashier-v5-shell .cashier-summary-bar--compact {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cashier-v5-shell .c5-menu-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-draft-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-draft-item__bottom {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-draft-item__top {
+    flex-direction: column;
+  }
+
+  .cashier-v5-shell .c5-draft-item strong {
+    text-align: left;
+  }
+}
+
+@media (max-width: 620px) {
+  .cashier-v5-shell {
+    padding: 8px;
+  }
+
+  .cashier-v5-shell .c5-card,
+  .cashier-v5-shell .cashier-card,
+  .cashier-v5-shell .cashier-header,
+  .cashier-v5-shell .cashier-nav-card {
+    border-radius: 20px;
+    padding: 12px;
+  }
+
+  .cashier-v5-shell .cashier-section-head {
+    flex-direction: column;
+  }
+
+  .cashier-v5-shell .c5-top-stats,
+  .cashier-v5-shell .cashier-summary-bar,
+  .cashier-v5-shell .cashier-summary-bar--compact,
+  .cashier-v5-shell .cashier-queue-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5-menu-card__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .cashier-queue-card__top,
+  .cashier-v5-shell .cashier-queue-card__bottom {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cashier-v5-shell .cashier-queue-card__bottom .btn {
+    width: 100%;
+  }
+}
+
+/* =========================================================
+   CASHIER POS V5 - NEATER MENU CARDS
+   ========================================================= */
+
+.cashier-v5-shell .c5m-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 12px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.cashier-v5-shell .c5m-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 138px;
+  padding: 16px;
+  border: 1px solid rgba(224, 192, 177, 0.78);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(60, 45, 38, 0.035);
+  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+}
+
+.cashier-v5-shell .c5m-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(60, 45, 38, 0.05);
+  border-color: rgba(159, 66, 0, 0.24);
+}
+
+.cashier-v5-shell .c5m-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cashier-v5-shell .c5m-card__title {
+  min-width: 0;
+}
+
+.cashier-v5-shell .c5m-card__title h4 {
+  margin: 0;
+  color: #251913;
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.cashier-v5-shell .c5m-card__title p {
+  margin: 6px 0 0;
+  color: #8c7165;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cashier-v5-shell .c5m-card__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.cashier-v5-shell .c5m-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 0;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid rgba(224, 192, 177, 0.82);
+  border-radius: 16px;
+  background: #fff8f6;
+  color: #251913;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+
+.cashier-v5-shell .c5m-action:hover {
+  background: #fff1eb;
+  border-color: rgba(159, 66, 0, 0.28);
+  transform: translateY(-1px);
+}
+
+.cashier-v5-shell .c5m-action__label {
+  display: block;
+  color: #8c7165;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.cashier-v5-shell .c5m-action__price {
+  display: block;
+  margin-top: 6px;
+  color: #251913;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* optional override lama supaya tidak bentrok */
+.cashier-v5-shell .c5-menu-grid,
+.cashier-v5-shell .c5-menu-card {
+  all: unset;
+}
+
+/* responsive */
+@media (max-width: 860px) {
+  .cashier-v5-shell .c5m-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .cashier-v5-shell .c5m-card {
+    min-height: 0;
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .cashier-v5-shell .c5m-card__actions {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .c5m-action {
+    min-height: 56px;
+  }
+
+  .cashier-v5-shell .c5m-card__title h4 {
+    font-size: 15px;
+  }
+
+  .cashier-v5-shell .c5m-action__price {
+    font-size: 14px;
+  }
+}
+
+/* =========================================================
+   CASHIER POS V5 - COMPACT MENU TEXT FIX
+   Mengecilkan text/harga agar tidak keluar dari card
+   ========================================================= */
+
+.cashier-v5-shell .c5m-grid {
+  gap: 10px !important;
+}
+
+.cashier-v5-shell .c5m-card {
+  min-height: 122px !important;
+  padding: 12px !important;
+  border-radius: 18px !important;
+  gap: 10px !important;
+}
+
+.cashier-v5-shell .c5m-card__title h4 {
+  font-size: 14px !important;
+  line-height: 1.2 !important;
+  font-weight: 900 !important;
+}
+
+.cashier-v5-shell .c5m-card__title p {
+  margin-top: 4px !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+  letter-spacing: 0.04em !important;
+}
+
+.cashier-v5-shell .c5m-card__actions {
+  gap: 7px !important;
+}
+
+.cashier-v5-shell .c5m-action {
+  min-width: 0 !important;
+  min-height: 52px !important;
+  padding: 8px 9px !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+}
+
+.cashier-v5-shell .c5m-action__label {
+  font-size: 10px !important;
+  line-height: 1 !important;
+  font-weight: 850 !important;
+}
+
+.cashier-v5-shell .c5m-action__price {
+  margin-top: 5px !important;
+  font-size: 12px !important;
+  line-height: 1.1 !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+}
+
+/* khusus layar laptop sempit */
+@media (max-width: 1420px) {
+  .cashier-v5-shell .c5m-card {
+    padding: 11px !important;
+  }
+
+  .cashier-v5-shell .c5m-card__title h4 {
+    font-size: 13.5px !important;
+  }
+
+  .cashier-v5-shell .c5m-action {
+    padding: 8px !important;
+  }
+
+  .cashier-v5-shell .c5m-action__price {
+    font-size: 11.5px !important;
+  }
+}
+
+/* jika panel makin sempit, tombol tetap tidak keluar */
+@media (max-width: 1240px) {
+  .cashier-v5-shell .c5m-action__price {
+    font-size: 12px !important;
+  }
+}
+/* =========================================================
+   CASHIER POS V5 - CHECKOUT PAGE FINAL CSS
+   Paste at the bottom of client/src/styles.css
+   ========================================================= */
+
+/* Checkout Page Layout */
+
+.cashier-v5-shell .cashier-checkout-page {
+  display: grid;
+  gap: 14px;
+}
+
+.cashier-v5-shell .cashier-checkout-topbar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  border-radius: 24px;
+  background: #fff8f6;
+  box-shadow: 0 14px 34px rgba(60, 45, 38, 0.055);
+}
+
+.cashier-v5-shell .cashier-checkout-topbar h2 {
+  margin: 0;
+  color: #251913;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1.15;
+}
+
+.cashier-v5-shell .cashier-checkout-topbar p {
+  margin: 5px 0 0;
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cashier-v5-shell .cashier-checkout-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.18fr) minmax(380px, 0.82fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* Left Detail Panel */
+
+.cashier-v5-shell .cashier-checkout-detail {
+  overflow: hidden;
+  padding: 0 !important;
+  border-radius: 24px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(60, 45, 38, 0.055);
+}
+
+.cashier-v5-shell .cashier-checkout-detail__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border-bottom: 1px solid rgba(224, 192, 177, 0.62);
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .cashier-checkout-detail__head h3 {
+  margin: 0;
+  color: #251913;
+  font-size: 19px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .cashier-checkout-detail__head p {
+  margin: 5px 0 0;
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Checkout Items - no image, simple row */
+
+.cashier-v5-shell .cashier-checkout-items {
+  display: grid;
+}
+
+.cashier-v5-shell .cashier-checkout-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid rgba(224, 192, 177, 0.52);
+  background: #ffffff;
+}
+
+.cashier-v5-shell .cashier-checkout-item:last-child {
+  border-bottom: 0;
+}
+
+/* hide old initial/image circle */
+.cashier-v5-shell .cashier-checkout-item__image {
+  display: none !important;
+}
+
+.cashier-v5-shell .cashier-checkout-item__info {
+  min-width: 0;
+}
+
+.cashier-v5-shell .cashier-checkout-item__info h4 {
+  margin: 0;
+  color: #251913;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.cashier-v5-shell .cashier-checkout-item__info p {
+  margin: 6px 0 0;
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cashier-v5-shell .cashier-checkout-item__info small {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #fff1eb;
+  color: #6b5146;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cashier-v5-shell .cashier-checkout-item strong {
+  color: #251913;
+  font-size: 16px;
+  font-weight: 950;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Total Box */
+
+.cashier-v5-shell .cashier-checkout-total-box {
+  display: grid;
+  gap: 9px;
+  padding: 16px;
+  border-top: 1px solid rgba(224, 192, 177, 0.62);
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .cashier-checkout-total-box > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  color: #6b5146;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.cashier-v5-shell .cashier-checkout-total-box b {
+  color: #251913;
+  font-weight: 950;
+  text-align: right;
+}
+
+.cashier-v5-shell .cashier-checkout-total-box__grand {
+  padding-top: 14px;
+  margin-top: 8px;
+  border-top: 1px solid rgba(224, 192, 177, 0.75);
+}
+
+.cashier-v5-shell .cashier-checkout-total-box__grand span {
+  color: #251913;
+  font-size: 17px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .cashier-checkout-total-box__grand strong {
+  color: #9f4200;
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 950;
+  line-height: 1;
+  text-align: right;
+}
+
+/* Right Payment Panel */
+
+.cashier-v5-shell .cashier-payment-panel {
+  position: sticky;
+  top: 132px;
+  display: grid;
+  gap: 14px;
+  padding: 16px !important;
+  border-radius: 24px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(60, 45, 38, 0.055);
+}
+
+.cashier-v5-shell .cashier-payment-panel .cashier-section-head {
+  margin-bottom: 0;
+}
+
+/* Payment Method Cards */
+
+.cashier-v5-shell .cashier-payment-methods {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.cashier-v5-shell .cashier-payment-methods button {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 72px;
+  padding: 10px 8px;
+  border: 2px solid rgba(224, 192, 177, 0.82);
+  border-radius: 18px;
+  background: #fff8f6;
+  color: #594237;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+
+.cashier-v5-shell .cashier-payment-methods button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(159, 66, 0, 0.34);
+  background: #fff1eb;
+}
+
+.cashier-v5-shell .cashier-payment-methods button.is-active {
+  border-color: #9f4200;
+  background: #ffdbcb;
+}
+
+.cashier-v5-shell .cashier-payment-methods button span {
+  display: block;
+  font-size: 21px;
+  line-height: 1;
+}
+
+.cashier-v5-shell .cashier-payment-methods button b {
+  display: block;
+  color: #251913;
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Payment Form */
+
+.cashier-v5-shell .cashier-payment-form {
+  display: grid;
+  gap: 10px;
+}
+
+.cashier-v5-shell .cashier-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.cashier-v5-shell .cashier-field {
+  display: grid;
+  gap: 7px;
+}
+
+.cashier-v5-shell .cashier-field > span {
+  color: #594237;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.cashier-v5-shell .cashier-payment-panel input,
+.cashier-v5-shell .cashier-payment-panel select,
+.cashier-v5-shell .cashier-payment-panel textarea {
+  min-height: 44px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cashier-v5-shell .cashier-payment-panel textarea {
+  min-height: 72px;
+}
+
+/* Promo Checkout */
+
+.cashier-v5-shell .cashier-block {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(224, 192, 177, 0.62);
+}
+
+.cashier-v5-shell .cashier-block__head h4 {
+  margin: 0;
+  color: #251913;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .cashier-promo-list {
+  display: grid;
+  gap: 8px;
+}
+
+.cashier-v5-shell .cashier-promo-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 11px;
+  border-radius: 16px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #fff8f6;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .cashier-promo-card.is-active {
+  border-color: #9f4200;
+  background: #ffdbcb;
+}
+
+.cashier-v5-shell .cashier-promo-card span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cashier-v5-shell .cashier-promo-card b {
+  color: #251913;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.cashier-v5-shell .cashier-promo-card small {
+  color: #6b5146;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+/* Cash Box */
+
+.cashier-v5-shell .cashier-cash-box {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  border-radius: 22px;
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .cashier-money-input {
+  position: relative;
+}
+
+.cashier-v5-shell .cashier-money-input small {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #8c7165;
+  font-size: 15px;
+  font-weight: 950;
+  z-index: 1;
+}
+
+.cashier-v5-shell .cashier-money-input input {
+  min-height: 56px;
+  padding-left: 46px;
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.cashier-v5-shell .cashier-cash-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cashier-v5-shell .cashier-cash-presets button {
+  min-height: 38px;
+  border: 1px solid rgba(224, 192, 177, 0.82);
+  border-radius: 13px;
+  background: #ffffff;
+  color: #594237;
+  font-size: 12px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .cashier-cash-presets button:hover {
+  background: #fff1eb;
+  border-color: rgba(159, 66, 0, 0.32);
+}
+
+/* Change / Non-cash Box */
+
+.cashier-v5-shell .cashier-change-box,
+.cashier-v5-shell .cashier-noncash-box {
+  display: grid;
+  gap: 5px;
+  padding: 15px;
+  border-radius: 20px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  background: #ffffff;
+}
+
+.cashier-v5-shell .cashier-change-box span,
+.cashier-v5-shell .cashier-noncash-box span {
+  color: #8c7165;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.cashier-v5-shell .cashier-change-box strong,
+.cashier-v5-shell .cashier-noncash-box strong {
+  color: #251913;
+  font-size: clamp(24px, 2.4vw, 34px);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.cashier-v5-shell .cashier-change-box small,
+.cashier-v5-shell .cashier-noncash-box small {
+  color: #6b5146;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.cashier-v5-shell .cashier-change-box.is-ok {
+  border-color: rgba(34, 197, 94, 0.32);
+  background: #f0fdf4;
+}
+
+.cashier-v5-shell .cashier-change-box.is-warning {
+  border-color: rgba(186, 26, 26, 0.24);
+  background: #ffdad6;
+}
+
+/* Process Button */
+
+.cashier-v5-shell .cashier-process-pay-btn {
+  width: 100%;
+  min-height: 62px;
+  border-radius: 20px;
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Secondary Actions */
+
+.cashier-v5-shell .cashier-checkout-secondary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.cashier-v5-shell .cashier-checkout-secondary-actions .btn {
+  width: 100%;
+}
+
+/* Edit Order inside checkout */
+
+.cashier-v5-shell .cashier-edit-list {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.cashier-v5-shell .cashier-edit-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) 96px 70px minmax(120px, 1fr) 70px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(224, 192, 177, 0.72);
+  border-radius: 16px;
+  background: #fff8f6;
+}
+
+.cashier-v5-shell .cashier-edit-row input,
+.cashier-v5-shell .cashier-edit-row select {
+  min-height: 38px;
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
+.cashier-v5-shell .cashier-edit-row button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 12px;
+  background: #ffdad6;
+  color: #ba1a1a;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.cashier-v5-shell .cashier-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Responsive Checkout */
+
+@media (max-width: 1240px) {
+  .cashier-v5-shell .cashier-payment-panel {
+    position: relative;
+    top: auto;
+  }
+
+  .cashier-v5-shell .cashier-checkout-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .cashier-v5-shell .cashier-checkout-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .cashier-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .cashier-payment-methods {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .cashier-checkout-item {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .cashier-checkout-item strong {
+    text-align: left;
+  }
+
+  .cashier-v5-shell .cashier-edit-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cashier-v5-shell .cashier-edit-row button {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .cashier-v5-shell .cashier-checkout-detail,
+  .cashier-v5-shell .cashier-payment-panel,
+  .cashier-v5-shell .cashier-checkout-topbar {
+    border-radius: 20px;
+  }
+
+  .cashier-v5-shell .cashier-checkout-detail__head {
+    flex-direction: column;
+  }
+
+  .cashier-v5-shell .cashier-cash-presets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cashier-v5-shell .cashier-checkout-secondary-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .cashier-edit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .cashier-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .cashier-v5-shell .cashier-actions .btn {
+    width: 100%;
+  }
+}
+
+/* =========================================================
+   CASHIER POS V5 - CHECKOUT COMPACT FIT SCREEN
+   Tujuan: desktop 1 layar, tulisan & card lebih compact
+   Paste di PALING BAWAH styles.css
+   ========================================================= */
+
+@media (min-width: 1241px) {
+  .cashier-v5-shell .cashier-checkout-page {
+    gap: 10px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-topbar {
+    padding: 12px 14px !important;
+    gap: 12px !important;
+    border-radius: 20px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-topbar h2 {
+    font-size: 18px !important;
+    line-height: 1.1 !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-topbar p {
+    margin-top: 3px !important;
+    font-size: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-layout {
+    grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr) !important;
+    gap: 12px !important;
+    align-items: stretch !important;
+    min-height: calc(100vh - 230px) !important;
+    max-height: calc(100vh - 230px) !important;
+  }
+
+  /* LEFT: DETAIL */
+  .cashier-v5-shell .cashier-checkout-detail {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    border-radius: 20px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-detail__head {
+    padding: 12px 14px !important;
+    gap: 10px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-detail__head h3 {
+    font-size: 16px !important;
+    line-height: 1.15 !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-detail__head p {
+    margin-top: 3px !important;
+    font-size: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-detail__head .btn,
+  .cashier-v5-shell .cashier-checkout-detail__head button {
+    min-height: 38px !important;
+    padding: 8px 12px !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-items {
+    min-height: 0 !important;
+    max-height: 100% !important;
+    overflow: auto !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-item {
+    padding: 12px 14px !important;
+    gap: 10px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-item__info h4 {
+    font-size: 13px !important;
+    line-height: 1.2 !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-item__info p {
+    margin-top: 4px !important;
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-item__info small {
+    margin-top: 6px !important;
+    padding: 4px 7px !important;
+    font-size: 11px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-item strong {
+    font-size: 13px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-total-box {
+    gap: 6px !important;
+    padding: 12px 14px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-total-box > div {
+    font-size: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-total-box__grand {
+    padding-top: 10px !important;
+    margin-top: 6px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-total-box__grand span {
+    font-size: 13px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-total-box__grand strong {
+    font-size: 30px !important;
+    line-height: 1 !important;
+  }
+
+  /* RIGHT: PAYMENT */
+  .cashier-v5-shell .cashier-payment-panel {
+    position: sticky !important;
+    top: 108px !important;
+    min-height: 0 !important;
+    max-height: calc(100vh - 230px) !important;
+    overflow: auto !important;
+    gap: 10px !important;
+    padding: 12px !important;
+    border-radius: 20px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-panel .cashier-section-head h3 {
+    font-size: 16px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-panel .cashier-section-head p {
+    font-size: 12px !important;
+    margin-top: 3px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-methods {
+    gap: 8px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-methods button {
+    min-height: 58px !important;
+    padding: 8px !important;
+    border-radius: 16px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-methods button span {
+    font-size: 17px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-methods button b {
+    font-size: 10px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-form,
+  .cashier-v5-shell .cashier-form-grid,
+  .cashier-v5-shell .cashier-block,
+  .cashier-v5-shell .cashier-promo-list {
+    gap: 8px !important;
+  }
+
+  .cashier-v5-shell .cashier-field {
+    gap: 5px !important;
+  }
+
+  .cashier-v5-shell .cashier-field > span {
+    font-size: 11px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-panel input,
+  .cashier-v5-shell .cashier-payment-panel select,
+  .cashier-v5-shell .cashier-payment-panel textarea {
+    min-height: 40px !important;
+    padding: 8px 12px !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-panel textarea {
+    min-height: 62px !important;
+  }
+
+  .cashier-v5-shell .cashier-block {
+    padding-top: 10px !important;
+    margin-top: 0 !important;
+  }
+
+  .cashier-v5-shell .cashier-block__head h4 {
+    font-size: 13px !important;
+  }
+
+  .cashier-v5-shell .cashier-promo-card {
+    padding: 8px 10px !important;
+    border-radius: 14px !important;
+    gap: 8px !important;
+  }
+
+  .cashier-v5-shell .cashier-promo-card b {
+    font-size: 11.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .cashier-v5-shell .cashier-promo-card small {
+    font-size: 10.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  .cashier-v5-shell .cashier-cash-box {
+    gap: 10px !important;
+    padding: 12px !important;
+    border-radius: 18px !important;
+  }
+
+  .cashier-v5-shell .cashier-money-input small {
+    left: 12px !important;
+    font-size: 13px !important;
+  }
+
+  .cashier-v5-shell .cashier-money-input input {
+    min-height: 48px !important;
+    padding-left: 38px !important;
+    font-size: 18px !important;
+  }
+
+  .cashier-v5-shell .cashier-cash-presets {
+    gap: 6px !important;
+  }
+
+  .cashier-v5-shell .cashier-cash-presets button {
+    min-height: 34px !important;
+    border-radius: 11px !important;
+    font-size: 11px !important;
+  }
+
+  .cashier-v5-shell .cashier-change-box,
+  .cashier-v5-shell .cashier-noncash-box {
+    gap: 4px !important;
+    padding: 12px !important;
+    border-radius: 16px !important;
+  }
+
+  .cashier-v5-shell .cashier-change-box span,
+  .cashier-v5-shell .cashier-noncash-box span {
+    font-size: 10px !important;
+  }
+
+  .cashier-v5-shell .cashier-change-box strong,
+  .cashier-v5-shell .cashier-noncash-box strong {
+    font-size: 24px !important;
+  }
+
+  .cashier-v5-shell .cashier-change-box small,
+  .cashier-v5-shell .cashier-noncash-box small {
+    font-size: 11px !important;
+  }
+
+  .cashier-v5-shell .cashier-process-pay-btn {
+    min-height: 50px !important;
+    border-radius: 16px !important;
+    font-size: 15px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-secondary-actions {
+    gap: 8px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-secondary-actions .btn {
+    min-height: 40px !important;
+    font-size: 12px !important;
+    border-radius: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-actions {
+    gap: 8px !important;
+  }
+
+  .cashier-v5-shell .cashier-actions .btn {
+    min-height: 38px !important;
+    font-size: 12px !important;
+    border-radius: 12px !important;
+  }
+}
+
+/* Tablet / laptop kecil tetap nyaman */
+@media (max-width: 1240px) {
+  .cashier-v5-shell .cashier-payment-panel {
+    position: relative !important;
+    top: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-layout {
+    min-height: auto !important;
+    max-height: none !important;
+  }
+}
+/* =========================================================
+   CASHIER POS V5 - REMOVE PAYMENT PANEL INTERNAL SCROLL
+   ========================================================= */
+
+@media (min-width: 1241px) {
+  /* panel pembayaran tidak boleh scroll sendiri */
+  .cashier-v5-shell .cashier-payment-panel {
+    max-height: none !important;
+    overflow: visible !important;
+    align-self: start !important;
+    gap: 8px !important;
+    padding: 10px !important;
+  }
+
+  /* layout checkout jangan paksa tinggi fixed */
+  .cashier-v5-shell .cashier-checkout-layout {
+    min-height: auto !important;
+    max-height: none !important;
+    align-items: start !important;
+  }
+
+  /* kecilkan area promo */
+  .cashier-v5-shell .cashier-block {
+    padding-top: 8px !important;
+    gap: 6px !important;
+  }
+
+  .cashier-v5-shell .cashier-block__head h4 {
+    font-size: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-promo-card {
+    padding: 7px 9px !important;
+    min-height: 36px !important;
+  }
+
+  .cashier-v5-shell .cashier-promo-card b {
+    font-size: 11px !important;
+  }
+
+  .cashier-v5-shell .cashier-promo-card small {
+    font-size: 10px !important;
+  }
+
+  /* kecilkan cash box */
+  .cashier-v5-shell .cashier-cash-box {
+    padding: 10px !important;
+    gap: 8px !important;
+    border-radius: 16px !important;
+  }
+
+  .cashier-v5-shell .cashier-money-input input {
+    min-height: 44px !important;
+    font-size: 16px !important;
+    padding-left: 36px !important;
+  }
+
+  .cashier-v5-shell .cashier-money-input small {
+    left: 12px !important;
+    font-size: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-cash-presets {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .cashier-v5-shell .cashier-cash-presets button {
+    min-height: 30px !important;
+    padding: 6px 8px !important;
+    font-size: 10.5px !important;
+    border-radius: 10px !important;
+  }
+
+  /* kecilkan kembalian */
+  .cashier-v5-shell .cashier-change-box,
+  .cashier-v5-shell .cashier-noncash-box {
+    padding: 10px !important;
+    gap: 3px !important;
+    border-radius: 15px !important;
+  }
+
+  .cashier-v5-shell .cashier-change-box span,
+  .cashier-v5-shell .cashier-noncash-box span {
+    font-size: 9.5px !important;
+  }
+
+  .cashier-v5-shell .cashier-change-box strong,
+  .cashier-v5-shell .cashier-noncash-box strong {
+    font-size: 22px !important;
+  }
+
+  .cashier-v5-shell .cashier-change-box small,
+  .cashier-v5-shell .cashier-noncash-box small {
+    font-size: 10.5px !important;
+  }
+
+  /* tombol proses dibuat lebih pendek */
+  .cashier-v5-shell .cashier-process-pay-btn {
+    min-height: 46px !important;
+    border-radius: 15px !important;
+    font-size: 14px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-secondary-actions {
+    gap: 8px !important;
+  }
+
+  .cashier-v5-shell .cashier-checkout-secondary-actions .btn {
+    min-height: 38px !important;
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+    border-radius: 12px !important;
+  }
+
+  /* kecilkan input form atas */
+  .cashier-v5-shell .cashier-payment-panel input,
+  .cashier-v5-shell .cashier-payment-panel select,
+  .cashier-v5-shell .cashier-payment-panel textarea {
+    min-height: 38px !important;
+    padding: 7px 10px !important;
+    font-size: 12px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-panel textarea {
+    min-height: 54px !important;
+  }
+
+  .cashier-v5-shell .cashier-field > span {
+    font-size: 10.5px !important;
+  }
+
+  /* metode pembayaran lebih pendek */
+  .cashier-v5-shell .cashier-payment-methods button {
+    min-height: 52px !important;
+    padding: 7px !important;
+    border-radius: 14px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-methods button span {
+    font-size: 15px !important;
+  }
+
+  .cashier-v5-shell .cashier-payment-methods button b {
+    font-size: 9.5px !important;
+  }
+}

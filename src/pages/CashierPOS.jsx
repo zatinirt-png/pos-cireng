@@ -1,33 +1,131 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, apiPost } from "../api";
 import { useNavigate } from "react-router-dom";
+import { apiGet, apiPost } from "../api";
 import LoadingScreen from "../components/ui/LoadingScreen";
 import Tabs from "../components/ui/Tabs";
 import CashierStockPanel from "../components/pos/CashierStockPanel";
 import { socket, connectSocket, disconnectSocket } from "../socket";
 
+const CHANNELS = {
+  REGULAR: { value: "REGULAR", label: "Regular", defaultPayment: "CASH" },
+  GOJEK: { value: "GOJEK", label: "Gojek", defaultPayment: "QRIS" },
+};
+
+const MAIN_TABS = [
+  { value: "SELL", label: "Order" },
+  { value: "CASH", label: "Cash" },
+  { value: "SHIFT", label: "Shift" },
+  { value: "STOCK", label: "Stok" },
+];
+
+const CHANNEL_TABS = [
+  { value: "REGULAR", label: "Regular" },
+  { value: "GOJEK", label: "Gojek" },
+];
+
+const PAYMENT_METHODS = ["CASH", "QRIS", "TRANSFER"];
+
 function rupiah(amount) {
   const n = Number(amount || 0);
-
   if (!Number.isFinite(n)) return "Rp 0,00";
 
   const sign = n < 0 ? "-" : "";
-  const abs = Math.abs(n);
-  const fixed = abs.toFixed(2);
-  let [i, d] = fixed.split(".");
+  const fixed = Math.abs(n).toFixed(2);
+  const [rawInt, dec] = fixed.split(".");
+  const int = rawInt.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
-  i = i.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-
-  return `${sign}Rp ${i},${d}`;
+  return `${sign}Rp ${int},${dec}`;
 }
 
-function normName(value) {
+function shortRupiah(amount) {
+  const n = Number(amount || 0);
+  if (!Number.isFinite(n)) return "0";
+  return new Intl.NumberFormat("id-ID").format(n);
+}
+
+function cleanText(value) {
   return String(value || "").trim();
 }
 
+function normalizeChannel(channel) {
+  return channel === "GOJEK" ? "GOJEK" : "REGULAR";
+}
+
+function getChannelLabel(channel) {
+  return CHANNELS[normalizeChannel(channel)].label;
+}
+
+function getDefaultPayment(channel) {
+  return CHANNELS[normalizeChannel(channel)].defaultPayment;
+}
+
+function getChannelProducts(meta, channel) {
+  const c = normalizeChannel(channel);
+  if (c === "GOJEK") return meta?.gojekProducts || meta?.products || [];
+  return meta?.regularProducts || meta?.products || [];
+}
+
+function getChannelPromos(meta, channel) {
+  const c = normalizeChannel(channel);
+  if (c === "GOJEK") return meta?.gojekPromos || meta?.promos || [];
+  return meta?.regularPromos || meta?.promos || [];
+}
+
+function getGojekFeePercent(meta) {
+  return Number(meta?.gojekFeePercent || 21.09);
+}
+
+function calcPercentAmount(amount, percent) {
+  const base = Math.max(0, Number(amount || 0));
+  const pct = Math.max(0, Number(percent || 0));
+  return Math.floor((base * pct) / 100);
+}
+
+function getProductPrice(product, portion) {
+  if (!product) return 0;
+  return portion === "LARGE"
+    ? Number(product.priceLarge || 0)
+    : Number(product.priceSmall || 0);
+}
+
+function itemKey(productId, portion) {
+  return `${productId}:${portion}`;
+}
+
+function toTime(value) {
+  if (!value) return "-";
+  try {
+    return new Date(value).toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "-";
+  }
+}
+
 function isCoreStockName(name) {
-  const n = String(name || "").trim().toLowerCase();
-  return n === "cireng";
+  return String(name || "").trim().toLowerCase() === "cireng";
+}
+
+function promoText(promo, productsMap) {
+  if (!promo) return "-";
+
+  const minText = `Min ${rupiah(promo.minSubtotal || 0)}`;
+
+  if (promo.type === "DISCOUNT_PERCENT") {
+    return `Diskon ${promo.discountPercent || 0}% • ${minText}`;
+  }
+
+  if (promo.type === "DISCOUNT_AMOUNT") {
+    return `Potongan ${rupiah(promo.discountAmount || 0)} • ${minText}`;
+  }
+
+  const bonusProduct = productsMap.get(promo.bonusProductId);
+  const bonusName = bonusProduct?.name || "Produk bonus";
+  const portion = promo.bonusPortion === "LARGE" ? "LARGE" : "SMALL";
+
+  return `Bonus ${bonusName} x${promo.bonusQty || 0} ${portion} • ${minText}`;
 }
 
 function buildPromoPreview({ promos = [], selectedPromoIds = [], gross = 0, products = [] }) {
@@ -36,18 +134,18 @@ function buildPromoPreview({ promos = [], selectedPromoIds = [], gross = 0, prod
     ? selectedPromoIds.filter(Boolean)
     : [];
 
-  if (!selectedIds.length || !Array.isArray(promos) || promos.length === 0) {
-    return {
-      discountTotal: 0,
-      discountBreakdown: [],
-      bonusItems: [],
-      appliedPromoIds: [],
-      skippedPromos: [],
-    };
-  }
+  const empty = {
+    discountTotal: 0,
+    discountBreakdown: [],
+    bonusItems: [],
+    appliedPromoIds: [],
+    skippedPromos: [],
+  };
+
+  if (!selectedIds.length || !Array.isArray(promos) || !promos.length) return empty;
 
   const promoMap = new Map(promos.map((promo) => [promo.id, promo]));
-  const productMap = new Map((products || []).map((product) => [product.id, product]));
+  const productMap = new Map(products.map((product) => [product.id, product]));
 
   let discountTotal = 0;
   const discountBreakdown = [];
@@ -57,7 +155,6 @@ function buildPromoPreview({ promos = [], selectedPromoIds = [], gross = 0, prod
 
   for (const promoId of selectedIds) {
     const promo = promoMap.get(promoId);
-
     if (!promo || promo.isActive === false) continue;
 
     const minSubtotal = Math.max(0, Number(promo.minSubtotal || 0));
@@ -75,53 +172,45 @@ function buildPromoPreview({ promos = [], selectedPromoIds = [], gross = 0, prod
 
     if (promo.type === "DISCOUNT_PERCENT") {
       const pct = Number(promo.discountPercent || 0);
-
-      if (Number.isFinite(pct) && pct > 0) {
+      if (pct > 0) {
         const amount = Math.floor((safeGross * pct) / 100);
-
         discountTotal += amount;
         discountBreakdown.push({
           id: promo.id,
           name: promo.name,
-          label: `${Number(pct)}%`,
+          label: `${pct}%`,
           amount,
-          type: promo.type,
         });
       }
-
       continue;
     }
 
     if (promo.type === "DISCOUNT_AMOUNT") {
       const amount = Math.round(Number(promo.discountAmount || 0));
-
-      if (Number.isFinite(amount) && amount > 0) {
+      if (amount > 0) {
         discountTotal += amount;
         discountBreakdown.push({
           id: promo.id,
           name: promo.name,
           label: rupiah(amount),
           amount,
-          type: promo.type,
         });
       }
-
       continue;
     }
 
     if (promo.type === "BONUS_ITEM") {
       const qty = Math.round(Number(promo.bonusQty || 0));
-
       if (!promo.bonusProductId || qty <= 0) continue;
 
       const portion = promo.bonusPortion === "LARGE" ? "LARGE" : "SMALL";
-      const key = `${promo.bonusProductId}:${portion}`;
+      const key = itemKey(promo.bonusProductId, portion);
       const product = productMap.get(promo.bonusProductId);
 
       const current = bonusBucket.get(key) || {
         key,
         productId: promo.bonusProductId,
-        name: product?.name || "(Produk Bonus)",
+        name: product?.name || "Produk Bonus",
         portion,
         qty: 0,
         price: 0,
@@ -130,8 +219,7 @@ function buildPromoPreview({ promos = [], selectedPromoIds = [], gross = 0, prod
       };
 
       current.qty += qty;
-      current.promoNames = [...current.promoNames, promo.name].filter(Boolean);
-
+      current.promoNames.push(promo.name);
       bonusBucket.set(key, current);
     }
   }
@@ -145,123 +233,56 @@ function buildPromoPreview({ promos = [], selectedPromoIds = [], gross = 0, prod
   };
 }
 
-function promoSummaryText(promo, productsMap = new Map()) {
-  if (!promo) return "-";
-
-  const minText = `Min ${rupiah(promo.minSubtotal || 0)}`;
-
-  if (promo.type === "DISCOUNT_PERCENT") {
-    return `Diskon ${promo.discountPercent || 0}% (${minText})`;
-  }
-
-  if (promo.type === "DISCOUNT_AMOUNT") {
-    return `Potongan ${rupiah(promo.discountAmount || 0)} (${minText})`;
-  }
-
-  const bonusProduct = productsMap.get(promo.bonusProductId);
-  const bonusName = bonusProduct?.name || "Produk bonus";
-  const bonusPortion = promo.bonusPortion === "LARGE" ? "LARGE" : "SMALL";
-
-  return `Gratis ${bonusName} x${promo.bonusQty || 0} • ${bonusPortion} (${minText})`;
+function makeEmptyChannelState() {
+  return {
+    REGULAR: {
+      cart: [],
+      promoIds: [],
+      manualDiscount: 0,
+      paymentMethod: "CASH",
+      customerName: "",
+      note: "",
+    },
+    GOJEK: {
+      cart: [],
+      promoIds: [],
+      manualDiscount: 0,
+      paymentMethod: "QRIS",
+      customerName: "",
+      note: "",
+    },
+  };
 }
 
-function getChannelLabel(channel) {
-  return channel === "GOJEK" ? "Gojek" : "Regular";
+function Alert({ type = "info", children }) {
+  if (!children) return null;
+  return <div className={`cashier-alert cashier-alert--${type}`}>{children}</div>;
 }
 
-function getChannelProducts(meta, channel) {
-  if (channel === "GOJEK") {
-    return meta?.gojekProducts || meta?.products || [];
-  }
-
-  return meta?.regularProducts || meta?.products || [];
+function EmptyState({ children }) {
+  return <div className="cashier-empty">{children}</div>;
 }
 
-function getChannelPromos(meta, channel) {
-  if (channel === "GOJEK") {
-    return meta?.gojekPromos || meta?.promos || [];
-  }
-
-  return meta?.regularPromos || meta?.promos || [];
-}
-
-function getChannelFeePercent(meta, channel) {
-  if (channel === "GOJEK") return Number(meta?.gojekFeePercent || 21.09);
-  return 0;
-}
-
-function calcChannelFee(amount, percent) {
-  const base = Math.max(0, Number(amount || 0));
-  const pct = Math.max(0, Number(percent || 0));
-
-  return Math.floor((base * pct) / 100);
-}
-
-function toTime(value) {
-  if (!value) return "-";
-
-  try {
-    return new Date(value).toLocaleTimeString("id-ID", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "-";
-  }
-}
-
-function MiniStat({ label, value, note }) {
+function SectionTitle({ title, subtitle, action }) {
   return (
-    <div className="adm-check-item">
-      <div className="adm-kpi-label">{label}</div>
-      <div className="adm-list-title">{value}</div>
-      {note ? <div className="field-hint">{note}</div> : null}
-    </div>
-  );
-}
-
-function TotalSummary({
-  channel,
-  gross,
-  manualDiscount,
-  promoDiscount,
-  platformFeePercent,
-  platformFeeAmount,
-  subtotalAfterFee,
-  totalDiscount,
-  netTotal,
-}) {
-  const isGojek = channel === "GOJEK";
-
-  return (
-    <div className="pos-totalbar">
-      <div className="adm-form-grid">
-        <MiniStat label="Total Menu" value={rupiah(gross)} />
-        <MiniStat label="Diskon Manual" value={`- ${rupiah(manualDiscount)}`} />
-        <MiniStat label="Diskon Promo" value={`- ${rupiah(promoDiscount)}`} />
-
-        {isGojek ? (
-          <>
-            <MiniStat
-              label={`Fee Gojek (${Number(platformFeePercent || 0).toFixed(2)}%)`}
-              value={`- ${rupiah(platformFeeAmount)}`}
-            />
-            <MiniStat label="Subtotal Setelah Fee" value={rupiah(subtotalAfterFee)} />
-            <MiniStat label="Total Diskon" value={`- ${rupiah(totalDiscount)}`} />
-          </>
-        ) : null}
-      </div>
-
+    <div className="cashier-section-head">
       <div>
-        <div className="muted">Total Akhir</div>
-        <div className="pos-total">{rupiah(netTotal)}</div>
+        <h3>{title}</h3>
+        {subtitle ? <p>{subtitle}</p> : null}
       </div>
+      {action ? <div>{action}</div> : null}
     </div>
   );
 }
 
-function EmptyBox({ children }) {
-  return <div className="pos-soft-box muted">{children}</div>;
+function Kpi({ label, value, hint, tone = "" }) {
+  return (
+    <div className={`cashier-kpi ${tone ? `cashier-kpi--${tone}` : ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {hint ? <small>{hint}</small> : null}
+    </div>
+  );
 }
 
 export default function CashierPOS() {
@@ -273,16 +294,24 @@ export default function CashierPOS() {
   const [meta, setMeta] = useState(null);
   const [metaSyncAt, setMetaSyncAt] = useState(null);
   const [metaSyncErr, setMetaSyncErr] = useState("");
-  const metaSigRef = useRef("");
 
   const [shift, setShift] = useState(null);
-  const [openingCash, setOpeningCash] = useState(0);
-  const [closingCash, setClosingCash] = useState(0);
   const [summary, setSummary] = useState(null);
   const [movements, setMovements] = useState([]);
-  const [cashMoveType, setCashMoveType] = useState("CASH_OUT");
-  const [cashMoveAmount, setCashMoveAmount] = useState(0);
-  const [cashMoveNote, setCashMoveNote] = useState("");
+
+  const [mainTab, setMainTab] = useState("SELL");
+  const [activeChannel, setActiveChannel] = useState("REGULAR");
+  const [cashFilter, setCashFilter] = useState("ALL");
+  const [productSearch, setProductSearch] = useState("");
+
+  const [channelState, setChannelState] = useState(makeEmptyChannelState);
+
+  const [queue, setQueue] = useState([]);
+  const [queueLoading, setQueueLoading] = useState(false);
+  const [queueErr, setQueueErr] = useState("");
+
+  const [openingCash, setOpeningCash] = useState(0);
+  const [closingCash, setClosingCash] = useState(0);
 
   const [invStocks, setInvStocks] = useState([]);
   const [invCentralStocks, setInvCentralStocks] = useState([]);
@@ -291,42 +320,15 @@ export default function CashierPOS() {
   const [openStockChecked, setOpenStockChecked] = useState({});
   const [openStockQty, setOpenStockQty] = useState({});
 
-  const [cartByChannel, setCartByChannel] = useState({
-    REGULAR: [],
-    GOJEK: [],
-  });
-
-  const [promoIdsByChannel, setPromoIdsByChannel] = useState({
-    REGULAR: [],
-    GOJEK: [],
-  });
-
-  const [discountByChannel, setDiscountByChannel] = useState({
-    REGULAR: 0,
-    GOJEK: 0,
-  });
-
-  const [paymentMethodByChannel, setPaymentMethodByChannel] = useState({
-    REGULAR: "CASH",
-    GOJEK: "QRIS",
-  });
-
-  const [noteByChannel, setNoteByChannel] = useState({
-    REGULAR: "",
-    GOJEK: "",
-  });
-
-  const [customerNameByChannel, setCustomerNameByChannel] = useState({
-    REGULAR: "",
-    GOJEK: "",
-  });
-
-  const [queue, setQueue] = useState([]);
-  const [qErr, setQErr] = useState("");
-  const [qLoading, setQLoading] = useState(false);
+  const [cashMoveType, setCashMoveType] = useState("CASH_OUT");
+  const [cashMoveAmount, setCashMoveAmount] = useState(0);
+  const [cashMoveNote, setCashMoveNote] = useState("");
 
   const [openOrder, setOpenOrder] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [checkoutView, setCheckoutView] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editItems, setEditItems] = useState([]);
+  const [editNote, setEditNote] = useState("");
 
   const [checkout, setCheckout] = useState({
     manualDiscount: 0,
@@ -334,222 +336,300 @@ export default function CashierPOS() {
     note: "",
     promoIds: [],
   });
+  const [cashReceived, setCashReceived] = useState("");
 
-  const [editMode, setEditMode] = useState(false);
-  const [editItems, setEditItems] = useState([]);
-  const [editNote, setEditNote] = useState("");
-  const [paidBusy, setPaidBusy] = useState(false);
+  const [closeShiftOpen, setCloseShiftOpen] = useState(false);
+
+  const [booting, setBooting] = useState(true);
+  const [openShiftBusy, setOpenShiftBusy] = useState(false);
+  const [enqueueBusy, setEnqueueBusy] = useState(false);
+  const [cashBusy, setCashBusy] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
-
-  const checkoutLockRef = useRef(false);
+  const [closeShiftBusy, setCloseShiftBusy] = useState(false);
 
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  const [booting, setBooting] = useState(true);
-
-  const [mainTab, setMainTab] = useState("SELL");
-  const [cashTab, setCashTab] = useState("ALL");
-
-  const [closeShiftOpen, setCloseShiftOpen] = useState(false);
-  const [closeShiftBusy, setCloseShiftBusy] = useState(false);
-
-  const qSigRef = useRef("");
-  const qReqRef = useRef(0);
-  const qDidFirstLoadRef = useRef(false);
-
-  const [saleBusy, setSaleBusy] = useState(false);
-  const [openShiftBusy, setOpenShiftBusy] = useState(false);
-
-  const saleLockRef = useRef(false);
+  const queueSigRef = useRef("");
+  const enqueueLockRef = useRef(false);
+  const checkoutLockRef = useRef(false);
   const openShiftLockRef = useRef(false);
 
-  const activeSalesChannel = mainTab === "GOJEK" ? "GOJEK" : "REGULAR";
-  const activeChannelLabel = getChannelLabel(activeSalesChannel);
+  const allProducts = meta?.allProducts || meta?.products || [];
+  const activeProducts = getChannelProducts(meta, activeChannel);
+  const activePromos = getChannelPromos(meta, activeChannel);
+  const activeState = channelState[activeChannel] || makeEmptyChannelState()[activeChannel];
 
-  const activeCart = cartByChannel[activeSalesChannel] || [];
-  const activePromoIds = promoIdsByChannel[activeSalesChannel] || [];
-  const activeDiscount = Number(discountByChannel[activeSalesChannel] || 0);
-  const activePaymentMethod =
-    paymentMethodByChannel[activeSalesChannel] ||
-    (activeSalesChannel === "GOJEK" ? "QRIS" : "CASH");
-  const activeNote = noteByChannel[activeSalesChannel] || "";
-  const activeCustomerName = customerNameByChannel[activeSalesChannel] || "";
+  const productMap = useMemo(() => new Map(allProducts.map((p) => [p.id, p])), [allProducts]);
 
-  const activeMetaProducts = getChannelProducts(meta, activeSalesChannel);
-  const activeMetaPromos = getChannelPromos(meta, activeSalesChannel);
-  const activeFeePercent = getChannelFeePercent(meta, activeSalesChannel);
+  const visibleProducts = useMemo(() => {
+    const q = cleanText(productSearch).toLowerCase();
+    if (!q) return activeProducts;
 
-  function computeMetaSig(metaObj) {
-    const products = (metaObj?.allProducts || metaObj?.products || [])
-      .map(
-        (product) =>
-          `${product.id}:${product.priceSmall}:${product.priceLarge}:${
-            product.isActive ?? ""
-          }:${product.salesChannel || "ALL"}`
-      )
-      .join("|");
+    return activeProducts.filter((product) =>
+      String(product?.name || "").toLowerCase().includes(q)
+    );
+  }, [activeProducts, productSearch]);
 
-    const promos = (metaObj?.allPromos || metaObj?.promos || [])
-      .map(
-        (promo) =>
-          `${promo.id}:${promo.type}:${promo.isActive}:${promo.salesChannel || "ALL"}:${
-            promo.minSubtotal
-          }:${promo.discountPercent}:${promo.discountAmount}:${promo.bonusProductId}:${
-            promo.bonusPortion
-          }:${promo.bonusQty}:${promo.startAt}:${promo.endAt}`
-      )
-      .join("|");
+  const regularQueue = useMemo(
+    () => (queue || []).filter((order) => normalizeChannel(order.salesChannel) === "REGULAR"),
+    [queue]
+  );
 
-    const ingredients = (metaObj?.ingredients || [])
-      .map((ingredient) => {
-        return `${ingredient.id}:${ingredient.name}:${ingredient.unit}:${ingredient.isGlobal}:${ingredient.allowNegative}`;
-      })
-      .join("|");
+  const gojekQueue = useMemo(
+    () => (queue || []).filter((order) => normalizeChannel(order.salesChannel) === "GOJEK"),
+    [queue]
+  );
 
-    return `p=${products}__r=${promos}__i=${ingredients}`;
+  const activeQueue = activeChannel === "GOJEK" ? gojekQueue : regularQueue;
+
+  const cartCalc = useMemo(() => {
+    const gross = activeState.cart.reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
+
+    const preview = buildPromoPreview({
+      promos: activePromos,
+      selectedPromoIds: activeState.promoIds,
+      gross,
+      products: activeProducts,
+    });
+
+    const feePercent = activeChannel === "GOJEK" ? getGojekFeePercent(meta) : 0;
+    const platformFeeAmount = activeChannel === "GOJEK" ? calcPercentAmount(gross, feePercent) : 0;
+    const subtotalAfterFee = Math.max(0, gross - platformFeeAmount);
+    const manualDiscount = Math.max(0, Number(activeState.manualDiscount || 0));
+    const promoDiscount = Math.max(0, Number(preview.discountTotal || 0));
+    const totalDiscount = Math.min(subtotalAfterFee, manualDiscount + promoDiscount);
+    const netTotal = Math.max(0, subtotalAfterFee - totalDiscount);
+
+    return {
+      gross,
+      promoPreview: preview,
+      feePercent,
+      platformFeeAmount,
+      subtotalAfterFee,
+      manualDiscount,
+      promoDiscount,
+      totalDiscount,
+      netTotal,
+    };
+  }, [activeState, activePromos, activeProducts, activeChannel, meta]);
+
+  const checkoutCalc = useMemo(() => {
+    if (!openOrder) {
+      return {
+        gross: 0,
+        feePercent: 0,
+        platformFeeAmount: 0,
+        subtotalAfterFee: 0,
+        manualDiscount: 0,
+        promoDiscount: 0,
+        netTotal: 0,
+        change: 0,
+        cashEnough: false,
+        promoPreview: buildPromoPreview({}),
+      };
+    }
+
+    const channel = normalizeChannel(openOrder.salesChannel);
+    const products = getChannelProducts(meta, channel);
+    const promos = getChannelPromos(meta, channel);
+
+    const gross = editMode
+      ? editItems.reduce((sum, row) => {
+          const product = products.find((p) => p.id === row.productId);
+          return sum + getProductPrice(product, row.portion) * Number(row.qty || 0);
+        }, 0)
+      : Number(openOrder.grossTotal || 0);
+
+    const promoPreview = buildPromoPreview({
+      promos,
+      selectedPromoIds: checkout.promoIds,
+      gross,
+      products,
+    });
+
+    const feePercent = channel === "GOJEK" ? getGojekFeePercent(meta) : 0;
+    const platformFeeAmount = channel === "GOJEK" ? calcPercentAmount(gross, feePercent) : 0;
+    const subtotalAfterFee = Math.max(0, gross - platformFeeAmount);
+    const manualDiscount = Math.max(0, Number(checkout.manualDiscount || 0));
+    const promoDiscount = Math.max(0, Number(promoPreview.discountTotal || 0));
+    const totalDiscount = Math.min(subtotalAfterFee, manualDiscount + promoDiscount);
+    const netTotal = Math.max(0, subtotalAfterFee - totalDiscount);
+    const received = Number(cashReceived || 0);
+    const change = checkout.paymentMethod === "CASH" ? Math.max(0, received - netTotal) : 0;
+    const cashEnough = checkout.paymentMethod !== "CASH" || received >= netTotal;
+
+    return {
+      gross,
+      feePercent,
+      platformFeeAmount,
+      subtotalAfterFee,
+      manualDiscount,
+      promoDiscount,
+      totalDiscount,
+      netTotal,
+      received,
+      change,
+      cashEnough,
+      promoPreview,
+    };
+  }, [openOrder, meta, editMode, editItems, checkout, cashReceived]);
+
+  const cashPresets = useMemo(() => {
+    const total = Math.max(0, Number(checkoutCalc.netTotal || 0));
+    const roundTo = (base) => Math.ceil(total / base) * base;
+
+    const values = [
+      total,
+      roundTo(5000),
+      roundTo(10000),
+      50000,
+      100000,
+      150000,
+    ]
+      .filter((v) => Number.isFinite(v) && v > 0 && v >= total)
+      .filter((v, index, arr) => arr.indexOf(v) === index)
+      .slice(0, 6);
+
+    return values;
+  }, [checkoutCalc.netTotal]);
+
+  const syncText = metaSyncAt
+    ? metaSyncAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+    : "-";
+
+  function setActiveState(patchOrFn) {
+    setChannelState((prev) => {
+      const current = prev[activeChannel] || makeEmptyChannelState()[activeChannel];
+      const patch = typeof patchOrFn === "function" ? patchOrFn(current) : patchOrFn;
+
+      return {
+        ...prev,
+        [activeChannel]: {
+          ...current,
+          ...patch,
+        },
+      };
+    });
+  }
+
+  function clearActiveCart() {
+    setActiveState({
+      cart: [],
+      promoIds: [],
+      manualDiscount: 0,
+      paymentMethod: getDefaultPayment(activeChannel),
+      customerName: "",
+      note: "",
+    });
+  }
+
+  function exitCheckoutView() {
+    setCheckoutView(false);
+    setOpenOrder(null);
+    setEditMode(false);
+    setEditItems([]);
+    setEditNote("");
+    setCashReceived("");
+    setCheckout({
+      manualDiscount: 0,
+      paymentMethod: getDefaultPayment(activeChannel),
+      note: "",
+      promoIds: [],
+    });
   }
 
   async function loadMeta({ silent = false } = {}) {
     try {
-      const metaRes = await apiGet("/api/meta", token);
-
-      setMeta(metaRes);
+      const response = await apiGet("/api/meta", token, { force: true });
+      setMeta(response);
       setMetaSyncAt(new Date());
       setMetaSyncErr("");
-
-      const sig = computeMetaSig(metaRes);
-
-      if (metaSigRef.current && metaSigRef.current !== sig) {
-        setMsg("Menu / promo / bahan diperbarui dari Admin.");
-
-        try {
-          if (!shift) await loadOpeningStocks({ preserve: true });
-        } catch (_) {}
-      }
-
-      metaSigRef.current = sig;
     } catch (error) {
       const message = error?.message || "Gagal sync meta";
-
       setMetaSyncErr(message);
-
       if (!silent) setErr(message);
-    }
-  }
-
-  async function load({ boot = false } = {}) {
-    setErr("");
-    setMsg("");
-
-    if (boot) setBooting(true);
-
-    try {
-      const [metaRes, shiftRes] = await Promise.all([
-        apiGet("/api/meta", token),
-        apiGet("/api/shifts/current", token),
-      ]);
-
-      setMeta(metaRes);
-      setMetaSyncAt(new Date());
-      setMetaSyncErr("");
-      metaSigRef.current = computeMetaSig(metaRes);
-
-      setShift(shiftRes.shift);
-
-      if (shiftRes.shift) {
-        const [sumRes, mvRes] = await Promise.all([
-          apiGet("/api/shifts/summary", token),
-          apiGet("/api/cash/movements", token),
-        ]);
-
-        setSummary(sumRes.summary);
-        setMovements(mvRes.movements);
-      } else {
-        setSummary(null);
-        setMovements([]);
-      }
-    } catch (error) {
-      setErr(`Sync error: ${error?.message || String(error)}`);
-    } finally {
-      if (boot) setBooting(false);
     }
   }
 
   async function loadQueue({ silent = false } = {}) {
     if (!token) return;
 
-    const reqId = ++qReqRef.current;
-
-    if (!silent && !qDidFirstLoadRef.current) setQLoading(true);
-
-    setQErr("");
+    if (!silent) setQueueLoading(true);
+    setQueueErr("");
 
     try {
-      const response = await apiGet("/api/orders/queue?status=ALL", token);
-
-      if (reqId !== qReqRef.current) return;
-
+      const response = await apiGet("/api/orders/queue?status=ALL", token, { force: true });
       const next = response.orders || [];
+
       const sig = next
-        .map((order) => {
-          return `${order.id}:${order.salesChannel || "REGULAR"}:${order.status}:${
-            order.grossTotal
-          }:${order.itemCount}`;
-        })
+        .map((order) => `${order.id}:${order.status}:${order.salesChannel}:${order.grossTotal}:${order.itemCount}`)
         .join("|");
 
-      if (sig !== qSigRef.current) {
-        qSigRef.current = sig;
+      if (sig !== queueSigRef.current) {
+        queueSigRef.current = sig;
         setQueue(next);
       }
-
-      qDidFirstLoadRef.current = true;
     } catch (error) {
-      if (reqId !== qReqRef.current) return;
-      setQErr(error?.message || "Gagal load antrian");
+      setQueueErr(error?.message || "Gagal load antrian");
     } finally {
-      if (!silent) setQLoading(false);
+      if (!silent) setQueueLoading(false);
+    }
+  }
+
+  async function loadSummaryAndCash() {
+    if (!token || !shift) return;
+
+    try {
+      const [summaryRes, movementRes] = await Promise.all([
+        apiGet("/api/shifts/summary", token, { force: true }),
+        apiGet("/api/cash/movements", token, { force: true }),
+      ]);
+
+      setSummary(summaryRes.summary || null);
+      setMovements(movementRes.movements || []);
+    } catch (error) {
+      setErr(error?.message || "Gagal load ringkasan shift");
     }
   }
 
   async function loadOpeningStocks({ preserve = false } = {}) {
     if (!token) return;
 
-    setInvErr("");
     setInvLoading(true);
+    setInvErr("");
 
     try {
-      const response = await apiGet(
-        "/api/cashier/inventory/stocks?includeCentral=true",
-        token
-      );
+      const response = await apiGet("/api/cashier/inventory/stocks?includeCentral=true", token, {
+        force: true,
+      });
 
       const all = response?.stocks || [];
       const cartStocks = all.filter((stock) => !stock.isGlobal);
       const centralStocks = all.filter((stock) => !!stock.isGlobal);
 
-      setInvStocks(cartStocks);
-      setInvCentralStocks(centralStocks);
-
-      const prevChecked = preserve ? openStockChecked || {} : {};
-      const prevQty = preserve ? openStockQty || {} : {};
-
       const checked = {};
       const qty = {};
 
       for (const stock of cartStocks) {
-        const core = isCoreStockName(stock.name);
+        checked[stock.id] = isCoreStockName(stock.name)
+          ? true
+          : preserve
+          ? !!openStockChecked[stock.id]
+          : false;
 
-        checked[stock.id] = core ? true : !!prevChecked[stock.id];
-        qty[stock.id] = prevQty[stock.id] ?? Number(stock.qty ?? 0);
+        qty[stock.id] = preserve
+          ? openStockQty[stock.id] ?? Number(stock.qty || 0)
+          : Number(stock.qty || 0);
       }
 
+      setInvStocks(cartStocks);
+      setInvCentralStocks(centralStocks);
       setOpenStockChecked(checked);
       setOpenStockQty(qty);
     } catch (error) {
-      setInvErr(error?.message || "Gagal load stok untuk pembukaan shift");
+      setInvErr(error?.message || "Gagal load stok pembukaan shift");
       setInvStocks([]);
       setInvCentralStocks([]);
     } finally {
@@ -557,68 +637,77 @@ export default function CashierPOS() {
     }
   }
 
-  useEffect(() => {
-    if (!token) nav("/cashier");
-  }, [token, nav]);
+  async function loadInitial() {
+    setBooting(true);
+    setErr("");
+    setMsg("");
 
-  useEffect(() => {
-    if (!shift) {
-      setMainTab("SELL");
-      setCashTab("ALL");
-      setCloseShiftOpen(false);
-      setCloseShiftBusy(false);
+    try {
+      const [metaRes, shiftRes] = await Promise.all([
+        apiGet("/api/meta", token, { force: true }),
+        apiGet("/api/shifts/current", token, { force: true }),
+      ]);
+
+      setMeta(metaRes);
+      setMetaSyncAt(new Date());
+      setShift(shiftRes.shift || null);
+
+      if (shiftRes.shift) {
+        const [summaryRes, movementRes, queueRes] = await Promise.all([
+          apiGet("/api/shifts/summary", token, { force: true }),
+          apiGet("/api/cash/movements", token, { force: true }),
+          apiGet("/api/orders/queue?status=ALL", token, { force: true }),
+        ]);
+
+        setSummary(summaryRes.summary || null);
+        setMovements(movementRes.movements || []);
+        setQueue(queueRes.orders || []);
+      }
+    } catch (error) {
+      setErr(`Sync error: ${error?.message || String(error)}`);
+    } finally {
+      setBooting(false);
     }
-  }, [shift]);
+  }
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      nav("/cashier");
+      return;
+    }
 
-    load({ boot: true });
+    loadInitial();
 
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") loadMeta({ silent: true });
     }, 30000);
 
-    const onVisibilityChange = () => {
+    const onVisible = () => {
       if (document.visibilityState === "visible") loadMeta({ silent: true });
     };
 
-    document.addEventListener("visibilitychange", onVisibilityChange);
+    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      document.removeEventListener("visibilitychange", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   useEffect(() => {
     if (!token) return;
-    if (shift) return;
-
-    loadOpeningStocks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, shift]);
-
-  useEffect(() => {
-    if (!token) return;
-
     connectSocket(token);
-
-    return () => {
-      disconnectSocket();
-    };
+    return () => disconnectSocket();
   }, [token]);
 
   useEffect(() => {
-    if (!token) return;
-    if (!shift) return;
+    if (!token || !shift) return;
 
     loadQueue({ silent: false });
 
     const onInvalidate = () => {
-      if (document.visibilityState !== "visible") return;
-      loadQueue({ silent: true });
+      if (document.visibilityState === "visible") loadQueue({ silent: true });
     };
 
     socket.on("orders:invalidate", onInvalidate);
@@ -634,286 +723,114 @@ export default function CashierPOS() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, shift]);
 
-  const regularQueue = useMemo(() => {
-    return (queue || []).filter((order) => (order.salesChannel || "REGULAR") !== "GOJEK");
-  }, [queue]);
-
-  const gojekQueue = useMemo(() => {
-    return (queue || []).filter((order) => (order.salesChannel || "REGULAR") === "GOJEK");
-  }, [queue]);
-
-  const visibleQueueChannel = mainTab === "GOJEK" ? "GOJEK" : "REGULAR";
-
-  const visibleQueue = useMemo(() => {
-    return visibleQueueChannel === "GOJEK" ? gojekQueue : regularQueue;
-  }, [visibleQueueChannel, gojekQueue, regularQueue]);
-
-  const grossTotal = useMemo(() => {
-    return activeCart.reduce((sum, item) => sum + item.price * item.qty, 0);
-  }, [activeCart]);
-
-  const promoProductsMap = useMemo(() => {
-    const map = new Map();
-
-    activeMetaProducts.forEach((product) => map.set(product.id, product));
-
-    return map;
-  }, [activeMetaProducts]);
-
-  const cartPromoPreview = useMemo(() => {
-    return buildPromoPreview({
-      promos: activeMetaPromos,
-      selectedPromoIds: activePromoIds,
-      gross: grossTotal,
-      products: activeMetaProducts,
-    });
-  }, [activeMetaPromos, activePromoIds, grossTotal, activeMetaProducts]);
-
-  const platformFeeAmount = useMemo(() => {
-    return calcChannelFee(grossTotal, activeFeePercent);
-  }, [grossTotal, activeFeePercent]);
-
-  const subtotalAfterPlatformFee = useMemo(() => {
-    return Math.max(0, grossTotal - platformFeeAmount);
-  }, [grossTotal, platformFeeAmount]);
-
-  const totalDiscount = useMemo(() => {
-    return Math.min(
-      subtotalAfterPlatformFee,
-      Number(activeDiscount || 0) + Number(cartPromoPreview.discountTotal || 0)
-    );
-  }, [activeDiscount, cartPromoPreview, subtotalAfterPlatformFee]);
-
-  const netTotal = useMemo(() => {
-    return Math.max(0, subtotalAfterPlatformFee - totalDiscount);
-  }, [subtotalAfterPlatformFee, totalDiscount]);
-
-  const checkoutChannel = openOrder?.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR";
-
-  const checkoutMetaProducts = useMemo(() => {
-    return getChannelProducts(meta, checkoutChannel);
-  }, [meta, checkoutChannel]);
-
-  const checkoutMetaPromos = useMemo(() => {
-    return getChannelPromos(meta, checkoutChannel);
-  }, [meta, checkoutChannel]);
-
-  const checkoutFeePercent = useMemo(() => {
-    return getChannelFeePercent(meta, checkoutChannel);
-  }, [meta, checkoutChannel]);
-
-  const checkoutPromoProductsMap = useMemo(() => {
-    const map = new Map();
-
-    checkoutMetaProducts.forEach((product) => map.set(product.id, product));
-
-    return map;
-  }, [checkoutMetaProducts]);
-
-  const checkoutPromoPreview = useMemo(() => {
-    return buildPromoPreview({
-      promos: checkoutMetaPromos,
-      selectedPromoIds: checkout.promoIds || [],
-      gross: Number(openOrder?.grossTotal || 0),
-      products: checkoutMetaProducts,
-    });
-  }, [checkoutMetaPromos, checkout.promoIds, openOrder, checkoutMetaProducts]);
-
-  const checkoutGrossTotal = useMemo(() => {
-    return Number(openOrder?.grossTotal || 0);
-  }, [openOrder]);
-
-  const checkoutPlatformFeeAmount = useMemo(() => {
-    return calcChannelFee(checkoutGrossTotal, checkoutFeePercent);
-  }, [checkoutGrossTotal, checkoutFeePercent]);
-
-  const checkoutSubtotalAfterPlatformFee = useMemo(() => {
-    return Math.max(0, checkoutGrossTotal - checkoutPlatformFeeAmount);
-  }, [checkoutGrossTotal, checkoutPlatformFeeAmount]);
-
-  const checkoutTotalDiscount = useMemo(() => {
-    const manual = Number(checkout.manualDiscount || 0);
-    const promo = Number(checkoutPromoPreview.discountTotal || 0);
-
-    return Math.min(checkoutSubtotalAfterPlatformFee, manual + promo);
-  }, [checkout.manualDiscount, checkoutPromoPreview, checkoutSubtotalAfterPlatformFee]);
-
-  const checkoutNetTotal = useMemo(() => {
-    return Math.max(0, checkoutSubtotalAfterPlatformFee - checkoutTotalDiscount);
-  }, [checkoutSubtotalAfterPlatformFee, checkoutTotalDiscount]);
-
-  const editAvailableProducts = useMemo(() => {
-    const channel = openOrder?.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR";
-    return getChannelProducts(meta, channel).filter((product) => product && product.isActive !== false);
-  }, [meta, openOrder]);
-
-  const productMap = useMemo(() => {
-    const channel = openOrder?.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR";
-    const list = getChannelProducts(meta, channel);
-
-    return new Map(list.map((product) => [product.id, product]));
-  }, [meta, openOrder]);
-
-  const editGrossPreview = useMemo(() => {
-    return (editItems || []).reduce((sum, row) => {
-      const qty = Number(row.qty || 0);
-
-      if (!Number.isFinite(qty) || qty <= 0) return sum;
-
-      return sum + editUnitPrice(row) * qty;
-    }, 0);
+  useEffect(() => {
+    if (!token || shift) return;
+    loadOpeningStocks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editItems, productMap]);
-
-  const movementStats = useMemo(() => {
-    let cashIn = 0;
-    let cashOut = 0;
-
-    for (const movement of movements || []) {
-      if (movement?.type === "CASH_IN") cashIn += 1;
-      else if (movement?.type === "CASH_OUT") cashOut += 1;
-    }
-
-    return {
-      cashInCount: cashIn,
-      cashOutCount: cashOut,
-      total: (movements || []).length,
-    };
-  }, [movements]);
-
-  const movementsFiltered = useMemo(() => {
-    if (!movements?.length) return [];
-    if (cashTab === "ALL") return movements;
-
-    return movements.filter((movement) => movement.type === cashTab);
-  }, [movements, cashTab]);
-
-  const syncText = metaSyncAt ? metaSyncAt.toLocaleTimeString("id-ID") : "-";
-  const orderIsPaid = openOrder?.status === "PENDING_PAID";
-
-  function setActiveCartValue(valueOrFn) {
-    setCartByChannel((prev) => {
-      const current = prev[activeSalesChannel] || [];
-      const next = typeof valueOrFn === "function" ? valueOrFn(current) : valueOrFn;
-
-      return {
-        ...prev,
-        [activeSalesChannel]: Array.isArray(next) ? next : [],
-      };
-    });
-  }
-
-  function setActiveDiscountValue(value) {
-    setDiscountByChannel((prev) => ({
-      ...prev,
-      [activeSalesChannel]: Number(value || 0),
-    }));
-  }
-
-  function setActivePaymentMethodValue(value) {
-    setPaymentMethodByChannel((prev) => ({
-      ...prev,
-      [activeSalesChannel]: value || (activeSalesChannel === "GOJEK" ? "QRIS" : "CASH"),
-    }));
-  }
-
-  function setActiveNoteValue(value) {
-    setNoteByChannel((prev) => ({
-      ...prev,
-      [activeSalesChannel]: String(value || ""),
-    }));
-  }
-
-  function setActiveCustomerNameValue(value) {
-    setCustomerNameByChannel((prev) => ({
-      ...prev,
-      [activeSalesChannel]: String(value || ""),
-    }));
-  }
+  }, [token, shift]);
 
   function addProduct(product, portion) {
-    setMsg("");
-    setErr("");
+  setErr("");
+  setMsg("");
 
-    const unitPrice = portion === "LARGE" ? product.priceLarge : product.priceSmall;
-    const key = `${product.id}:${portion}`;
+  const targetChannel = normalizeChannel(activeChannel);
+  const safePortion = portion === "LARGE" ? "LARGE" : "SMALL";
 
-    setCartByChannel((prev) => {
-      const current = prev[activeSalesChannel] || [];
-      const found = current.find((item) => item.key === key);
-
-      const next = found
-        ? current.map((item) =>
-            item.key === key ? { ...item, qty: item.qty + 1 } : item
-          )
-        : [
-            ...current,
-            {
-              key,
-              productId: product.id,
-              portion,
-              name: product.name,
-              price: unitPrice,
-              qty: 1,
-              itemNote: "",
-            },
-          ];
-
-      return {
-        ...prev,
-        [activeSalesChannel]: next,
-      };
-    });
+  if (!product?.id) {
+    setErr("Produk tidak valid. ID produk tidak ditemukan.");
+    return;
   }
+
+  const price = Number(getProductPrice(product, safePortion) || 0);
+  const key = itemKey(product.id, safePortion);
+
+  setChannelState((prev) => {
+    const empty = makeEmptyChannelState();
+    const current = prev[targetChannel] || empty[targetChannel];
+    const currentCart = Array.isArray(current.cart) ? current.cart : [];
+
+    const existing = currentCart.find((item) => item.key === key);
+
+    const nextCart = existing
+      ? currentCart.map((item) =>
+          item.key === key
+            ? {
+                ...item,
+                qty: Number(item.qty || 0) + 1,
+                subtotal: (Number(item.qty || 0) + 1) * Number(item.price || 0),
+              }
+            : item
+        )
+      : [
+          ...currentCart,
+          {
+            key,
+            productId: product.id,
+            name: product.name || "Produk",
+            portion: safePortion,
+            qty: 1,
+            price,
+            subtotal: price,
+            itemNote: "",
+          },
+        ];
+
+    return {
+      ...prev,
+      [targetChannel]: {
+        ...current,
+        cart: nextCart,
+      },
+    };
+  });
+
+  setMsg(`${product.name || "Produk"} ${safePortion} masuk ke Draft Order.`);
+}
 
   function updateQty(key, delta) {
-    setActiveCartValue((current) => {
-      const row = current.find((item) => item.key === key);
+    setActiveState((current) => ({
+      cart: current.cart
+        .map((item) => {
+          if (item.key !== key) return item;
 
-      if (!row) return current;
+          const qty = Math.max(0, Number(item.qty || 0) + delta);
 
-      const nextQty = Number(row.qty || 0) + Number(delta || 0);
-
-      if (!Number.isFinite(nextQty) || nextQty <= 0) {
-        return current.filter((item) => item.key !== key);
-      }
-
-      return current.map((item) =>
-        item.key === key ? { ...item, qty: nextQty } : item
-      );
-    });
+          return {
+            ...item,
+            qty,
+            subtotal: qty * item.price,
+          };
+        })
+        .filter((item) => item.qty > 0),
+    }));
   }
 
-  function removeItem(key) {
-    setActiveCartValue((current) => current.filter((item) => item.key !== key));
+  function updateCartNote(key, itemNote) {
+    setActiveState((current) => ({
+      cart: current.cart.map((item) => (item.key === key ? { ...item, itemNote } : item)),
+    }));
   }
 
-  function updateCartItemNote(key, value) {
-    setActiveCartValue((current) =>
-      current.map((item) => (item.key === key ? { ...item, itemNote: value } : item))
-    );
+  function removeCartItem(key) {
+    setActiveState((current) => ({
+      cart: current.cart.filter((item) => item.key !== key),
+    }));
   }
 
-  function togglePromo(id) {
-    setPromoIdsByChannel((prev) => {
-      const current = prev[activeSalesChannel] || [];
-      const next = current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id];
-
-      return {
-        ...prev,
-        [activeSalesChannel]: next,
-      };
-    });
+  function togglePromo(promoId) {
+    setActiveState((current) => ({
+      promoIds: current.promoIds.includes(promoId)
+        ? current.promoIds.filter((id) => id !== promoId)
+        : [...current.promoIds, promoId],
+    }));
   }
 
-  function toggleCheckoutPromo(id) {
+  function toggleCheckoutPromo(promoId) {
     setCheckout((prev) => ({
       ...prev,
-      promoIds: prev.promoIds.includes(id)
-        ? prev.promoIds.filter((item) => item !== id)
-        : [...prev.promoIds, id],
+      promoIds: prev.promoIds.includes(promoId)
+        ? prev.promoIds.filter((id) => id !== promoId)
+        : [...prev.promoIds, promoId],
     }));
   }
 
@@ -926,22 +843,18 @@ export default function CashierPOS() {
     setMsg("");
 
     try {
-      const selected = (invStocks || []).filter((stock) => openStockChecked[stock.id]);
+      const selected = invStocks.filter((stock) => openStockChecked[stock.id]);
 
-      const hasCireng = (invStocks || []).some(
-        (stock) => String(stock.name || "").toLowerCase() === "cireng"
-      );
+      const hasCireng = invStocks.some((stock) => isCoreStockName(stock.name));
+      const selectedCireng = selected.some((stock) => isCoreStockName(stock.name));
 
-      if (
-        hasCireng &&
-        !selected.some((stock) => String(stock.name || "").toLowerCase() === "cireng")
-      ) {
+      if (hasCireng && !selectedCireng) {
         throw new Error("Cireng wajib dipilih untuk stok awal.");
       }
 
       const openingStocks = selected.map((stock) => ({
         ingredientId: stock.id,
-        qty: Number(openStockQty[stock.id] ?? 0),
+        qty: Number(openStockQty[stock.id] || 0),
       }));
 
       const response = await apiPost(
@@ -953,42 +866,30 @@ export default function CashierPOS() {
         token
       );
 
-      setShift(response.shift);
+      setShift(response.shift || null);
 
-      const [sum, movementResponse] = await Promise.all([
-        apiGet("/api/shifts/summary", token),
-        apiGet("/api/cash/movements", token),
+      const [summaryRes, movementRes] = await Promise.all([
+        apiGet("/api/shifts/summary", token, { force: true }),
+        apiGet("/api/cash/movements", token, { force: true }),
       ]);
 
-      setSummary(sum.summary);
-      setMovements(movementResponse.movements || []);
+      setSummary(summaryRes.summary || null);
+      setMovements(movementRes.movements || []);
 
-      await loadQueue();
+      await loadQueue({ silent: false });
 
-      setMsg(
-        response?.alreadyOpen
-          ? "Shift sudah terbuka. Tampilan disinkronkan ulang."
-          : "Shift dibuka."
-      );
+      setMsg(response?.alreadyOpen ? "Shift yang sudah terbuka dimuat ulang." : "Shift berhasil dibuka.");
     } catch (error) {
       const message = error?.message || "Gagal buka shift";
 
-      if (/shift masih open|shift sudah open|sudah dibuka|sedang diproses/i.test(String(message || ""))) {
+      if (/sudah|open|terbuka/i.test(message)) {
         try {
-          const [shiftRes, sumRes, mvRes] = await Promise.all([
-            apiGet("/api/shifts/current", token),
-            apiGet("/api/shifts/summary", token),
-            apiGet("/api/cash/movements", token),
-          ]);
-
+          const shiftRes = await apiGet("/api/shifts/current", token, { force: true });
           setShift(shiftRes.shift || null);
-          setSummary(sumRes.summary || null);
-          setMovements(mvRes.movements || []);
-
           if (shiftRes.shift) {
+            await loadSummaryAndCash();
             await loadQueue({ silent: true });
-            setMsg("Shift yang sudah terbuka berhasil dimuat ulang.");
-            setErr("");
+            setMsg("Shift berhasil disinkronkan ulang.");
           } else {
             setErr(message);
           }
@@ -1005,183 +906,117 @@ export default function CashierPOS() {
   }
 
   async function closeShift() {
+    if (closeShiftBusy) return;
+
+    setCloseShiftBusy(true);
     setErr("");
     setMsg("");
 
     try {
       const closing = Number(closingCash || 0);
-
       if (!Number.isFinite(closing) || closing < 0) {
-        throw new Error("Kas fisik saat tutup tidak valid.");
+        throw new Error("Kas fisik penutupan tidak valid.");
       }
 
-      const expected = summary?.expectedCash ?? null;
-      const variance = expected == null ? null : closing - expected;
+      const expected = Number(summary?.expectedCash || 0);
+      const variance = closing - expected;
 
       await apiPost("/api/shifts/close", { closingCash: closing }, token);
 
       setShift(null);
       setSummary(null);
       setMovements([]);
-      setCartByChannel({ REGULAR: [], GOJEK: [] });
-      setPromoIdsByChannel({ REGULAR: [], GOJEK: [] });
-      setCustomerNameByChannel({ REGULAR: "", GOJEK: "" });
-      setDiscountByChannel({ REGULAR: 0, GOJEK: 0 });
-      setPaymentMethodByChannel({ REGULAR: "CASH", GOJEK: "QRIS" });
-      setNoteByChannel({ REGULAR: "", GOJEK: "" });
+      setQueue([]);
+      setChannelState(makeEmptyChannelState());
       setClosingCash(0);
+      setCloseShiftOpen(false);
+      exitCheckoutView();
 
-      if (expected == null) {
-        setMsg("Shift ditutup.");
-      } else {
-        const label = variance === 0 ? "PAS" : variance > 0 ? "LEBIH" : "KURANG";
-
-        setMsg(
-          `Shift ditutup. Expected: ${rupiah(expected)} | Closing: ${rupiah(
-            closing
-          )} | Selisih: ${rupiah(Math.abs(variance))} (${label})`
-        );
-      }
-
-      return true;
+      const label = variance === 0 ? "PAS" : variance > 0 ? "LEBIH" : "KURANG";
+      setMsg(`Shift ditutup. Selisih ${rupiah(Math.abs(variance))} (${label}).`);
     } catch (error) {
       setErr(error?.message || "Gagal tutup shift");
-      return false;
-    }
-  }
-
-  async function confirmCloseShiftFromModal() {
-    if (closeShiftBusy) return;
-
-    setCloseShiftBusy(true);
-
-    const ok = await closeShift();
-
-    setCloseShiftBusy(false);
-
-    if (ok) setCloseShiftOpen(false);
-  }
-
-  async function submitSale() {
-    if (saleLockRef.current) return;
-
-    saleLockRef.current = true;
-    setSaleBusy(true);
-    setErr("");
-    setMsg("");
-
-    try {
-      if (!shift) throw new Error("Buka shift dulu.");
-      if (activeCart.length === 0) throw new Error(`Keranjang ${activeChannelLabel} kosong.`);
-
-      const payload = {
-        salesChannel: activeSalesChannel,
-        items: activeCart.map((item) => ({
-          productId: item.productId,
-          portion: item.portion,
-          qty: item.qty,
-          itemNote: item.itemNote,
-        })),
-        discount: Number(activeDiscount || 0),
-        manualDiscount: Number(activeDiscount || 0),
-        promoIds: activePromoIds,
-        paymentMethod: activePaymentMethod,
-        note: activeNote,
-      };
-
-      const response = await apiPost("/api/sales", payload, token);
-
-      try {
-        const sum = await apiGet("/api/shifts/summary", token);
-        setSummary(sum.summary);
-      } catch (_) {}
-
-      setMsg(
-        `Transaksi sukses. ID: ${response.saleId} | Total Customer: ${rupiah(
-          response.netTotal
-        )}${
-          Number(response.platformFeeAmount || 0) > 0
-            ? ` | Fee: ${rupiah(response.platformFeeAmount)} | Bersih Outlet: ${rupiah(
-                response.netAfterPlatformFee
-              )}`
-            : ""
-        }`
-      );
-
-      setCartByChannel((prev) => ({ ...prev, [activeSalesChannel]: [] }));
-      setPromoIdsByChannel((prev) => ({ ...prev, [activeSalesChannel]: [] }));
-      setDiscountByChannel((prev) => ({ ...prev, [activeSalesChannel]: 0 }));
-      setPaymentMethodByChannel((prev) => ({
-        ...prev,
-        [activeSalesChannel]: activeSalesChannel === "GOJEK" ? "QRIS" : "CASH",
-      }));
-      setNoteByChannel((prev) => ({ ...prev, [activeSalesChannel]: "" }));
-
-      await loadQueue();
-    } catch (error) {
-      setErr(error?.message || "Gagal simpan transaksi");
     } finally {
-      setSaleBusy(false);
-      saleLockRef.current = false;
+      setCloseShiftBusy(false);
     }
   }
 
   async function enqueueOrder() {
-    setErr("");
-    setMsg("");
+  if (enqueueLockRef.current) return;
 
-    try {
-      if (!shift) throw new Error("Buka shift dulu sebelum buat antrian.");
-      if (activeCart.length === 0) throw new Error(`Keranjang ${activeChannelLabel} kosong.`);
+  enqueueLockRef.current = true;
+  setEnqueueBusy(true);
+  setErr("");
+  setMsg("");
 
-      const customerName = normName(activeCustomerName);
-
-      if (!customerName) throw new Error("Nama pelanggan wajib diisi.");
-
-      const duplicate = (queue || []).some((order) => {
-        return (
-          (order.salesChannel || "REGULAR") === activeSalesChannel &&
-          String(order.customerName || "").trim().toLowerCase() === customerName.toLowerCase()
-        );
-      });
-
-      if (duplicate) throw new Error("Nama pelanggan sudah ada di antrian.");
-
-      const payload = {
-        salesChannel: activeSalesChannel,
-        customerName,
-        note: activeNote || null,
-        items: activeCart.map((item) => ({
-          productId: item.productId,
-          portion: item.portion,
-          qty: item.qty,
-          itemNote: item.itemNote,
-        })),
-      };
-
-      await apiPost("/api/orders", payload, token);
-
-      setCartByChannel((prev) => ({ ...prev, [activeSalesChannel]: [] }));
-      setPromoIdsByChannel((prev) => ({ ...prev, [activeSalesChannel]: [] }));
-      setDiscountByChannel((prev) => ({ ...prev, [activeSalesChannel]: 0 }));
-      setPaymentMethodByChannel((prev) => ({
-        ...prev,
-        [activeSalesChannel]: activeSalesChannel === "GOJEK" ? "QRIS" : "CASH",
-      }));
-      setNoteByChannel((prev) => ({ ...prev, [activeSalesChannel]: "" }));
-      setCustomerNameByChannel((prev) => ({ ...prev, [activeSalesChannel]: "" }));
-
-      setMsg("Order masuk antrian.");
-      await loadQueue();
-    } catch (error) {
-      setErr(error?.message || "Gagal tambah antrian");
+  try {
+    if (!shift) {
+      throw new Error("Buka shift dulu sebelum membuat antrian.");
     }
+
+    const cartItems = Array.isArray(activeState.cart)
+      ? activeState.cart.filter((item) => item && item.productId && Number(item.qty || 0) > 0)
+      : [];
+
+    if (!cartItems.length) {
+      throw new Error(`Draft order ${getChannelLabel(activeChannel)} masih kosong.`);
+    }
+
+    const timeLabel = new Date()
+      .toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+      .replace(/\./g, "")
+      .replace(/:/g, "");
+
+    const fallbackName = `${getChannelLabel(activeChannel)}-${timeLabel}`;
+    const customerName = cleanText(activeState.customerName) || fallbackName;
+
+    const duplicate = queue.some((order) => {
+      return (
+        normalizeChannel(order.salesChannel) === activeChannel &&
+        cleanText(order.customerName).toLowerCase() === customerName.toLowerCase()
+      );
+    });
+
+    if (duplicate) {
+      throw new Error("Nama pelanggan sudah ada di antrian channel ini. Ganti nama/label antrian.");
+    }
+
+    const payload = {
+      salesChannel: activeChannel,
+      customerName,
+      note: activeState.note || null,
+      items: cartItems.map((item) => ({
+        productId: item.productId,
+        portion: item.portion === "LARGE" ? "LARGE" : "SMALL",
+        qty: Number(item.qty || 0),
+        itemNote: item.itemNote || "",
+      })),
+    };
+
+    const response = await apiPost("/api/orders", payload, token);
+
+    clearActiveCart();
+
+    await Promise.all([
+      loadQueue({ silent: false }),
+      loadMeta({ silent: true }),
+    ]);
+
+    setMsg(`Order ${customerName} berhasil masuk antrian.`);
+  } catch (error) {
+    setErr(error?.message || "Gagal tambah pesanan ke antrian.");
+  } finally {
+    setEnqueueBusy(false);
+    enqueueLockRef.current = false;
   }
+}
 
-  function buildEditItemsFromOrder(order) {
-    const items = order?.items || [];
-
-    return items.map((item, index) => ({
+  function buildEditRows(order) {
+    return (order?.items || []).map((item, index) => ({
       rowId: item.id || `${item.productId || item.product?.id}:${item.portion}:${index}`,
       productId: item.productId || item.product?.id,
       portion: item.portion === "LARGE" ? "LARGE" : "SMALL",
@@ -1190,76 +1025,30 @@ export default function CashierPOS() {
     }));
   }
 
-  function editUnitPrice(row) {
-    const product = productMap.get(row.productId);
-
-    if (!product) return 0;
-
-    return row.portion === "LARGE"
-      ? Number(product.priceLarge || 0)
-      : Number(product.priceSmall || 0);
-  }
-
-  function patchEditRow(rowId, patch) {
-    setEditItems((prev) =>
-      prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row))
-    );
-  }
-
-  function removeEditRow(rowId) {
-    setEditItems((prev) => prev.filter((row) => row.rowId !== rowId));
-  }
-
-  function addEditRow() {
-    const first = editAvailableProducts[0];
-
-    if (!first) return;
-
-    setEditItems((prev) => [
-      ...prev,
-      {
-        rowId: `new:${Date.now()}:${Math.random().toString(16).slice(2)}`,
-        productId: first.id,
-        portion: "SMALL",
-        qty: 1,
-        itemNote: "",
-      },
-    ]);
-  }
-
-  function resetEditStateFromOpenOrder() {
-    if (!openOrder) return;
-
-    setEditItems(buildEditItemsFromOrder(openOrder));
-    setEditNote(openOrder?.note || "");
-  }
-
-  async function openOrderModal(orderId) {
+  async function openOrderCheckout(orderId) {
     setErr("");
     setMsg("");
 
     try {
-      const response = await apiGet(`/api/orders/${orderId}`, token);
+      const response = await apiGet(`/api/orders/${orderId}`, token, { force: true });
       const order = response.order;
-      const orderChannel = order?.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR";
+      const channel = normalizeChannel(order?.salesChannel);
 
       setOpenOrder(order);
-
+      setEditItems(buildEditRows(order));
+      setEditNote(order?.note || "");
       setCheckout({
         manualDiscount: 0,
-        paymentMethod: orderChannel === "GOJEK" ? "QRIS" : "CASH",
+        paymentMethod: getDefaultPayment(channel),
         note: order?.note || "",
         promoIds: [],
       });
-
+      setCashReceived("");
       setEditMode(false);
-      setEditItems(buildEditItemsFromOrder(order));
-      setEditNote(order?.note || "");
-      setPaidBusy(false);
-      setEditBusy(false);
-      setModalOpen(true);
+      setCheckoutView(true);
+      setMainTab("SELL");
     } catch (error) {
-      setErr(error?.message || "Gagal buka order");
+      setErr(error?.message || "Gagal buka checkout order");
     }
   }
 
@@ -1269,55 +1058,53 @@ export default function CashierPOS() {
 
     try {
       await apiPost(`/api/orders/${orderId}/cancel`, {}, token);
+      await loadQueue({ silent: false });
+
+      if (openOrder?.id === orderId) {
+        exitCheckoutView();
+      }
 
       setMsg("Order dibatalkan.");
-
-      await loadQueue();
-
-      if (modalOpen) {
-        setModalOpen(false);
-        setOpenOrder(null);
-      }
     } catch (error) {
       setErr(error?.message || "Gagal cancel order");
     }
   }
 
-  async function setOrderPaid(orderId, paid) {
-    if (!token) return;
-
-    setErr("");
-    setMsg("");
-    setPaidBusy(true);
-
-    try {
-      const response = await apiPost(`/api/orders/${orderId}/paid`, { paid: !!paid }, token);
-
-      setOpenOrder((prev) =>
-        prev && prev.id === orderId
-          ? { ...prev, status: response.order?.status || prev.status }
-          : prev
-      );
-
-      setMsg(paid ? "Status: sudah bayar." : "Status: belum bayar.");
-
-      await loadQueue();
-    } catch (error) {
-      setErr(error?.message || "Gagal update status bayar");
-    } finally {
-      setPaidBusy(false);
-    }
+  function patchEditRow(rowId, patch) {
+    setEditItems((prev) => prev.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row)));
   }
 
-  async function saveOrderEdits(orderId) {
-    if (!token) return;
+  function removeEditRow(rowId) {
+    setEditItems((prev) => prev.filter((row) => row.rowId !== rowId));
+  }
 
+  function addEditRow() {
+    const channel = normalizeChannel(openOrder?.salesChannel);
+    const products = getChannelProducts(meta, channel);
+    const first = products[0];
+    if (!first) return;
+
+    setEditItems((prev) => [
+      ...prev,
+      {
+        rowId: `new:${Date.now()}`,
+        productId: first.id,
+        portion: "SMALL",
+        qty: 1,
+        itemNote: "",
+      },
+    ]);
+  }
+
+  async function saveOrderEdits() {
+    if (!openOrder) return;
+
+    setEditBusy(true);
     setErr("");
     setMsg("");
-    setEditBusy(true);
 
     try {
-      const items = (editItems || []).map((row) => ({
+      const items = editItems.map((row) => ({
         productId: row.productId,
         portion: row.portion === "LARGE" ? "LARGE" : "SMALL",
         qty: Number(row.qty || 0),
@@ -1328,30 +1115,31 @@ export default function CashierPOS() {
 
       for (const item of items) {
         if (!item.productId) throw new Error("Produk wajib dipilih.");
-        if (!Number.isFinite(item.qty) || item.qty <= 0) {
-          throw new Error("Qty harus > 0.");
-        }
+        if (!Number.isFinite(item.qty) || item.qty <= 0) throw new Error("Qty harus > 0.");
       }
 
       const response = await apiPost(
-        `/api/orders/${orderId}/update`,
-        { items, note: editNote || "" },
+        `/api/orders/${openOrder.id}/update`,
+        {
+          items,
+          note: editNote || "",
+        },
         token
       );
 
       setOpenOrder(response.order);
-
       setCheckout((prev) => ({
         ...prev,
         manualDiscount: 0,
         promoIds: [],
         note: response.order?.note || "",
       }));
-
+      setCashReceived("");
       setEditMode(false);
-      setMsg("Order berhasil diupdate. Silakan centang 'Sudah bayar' untuk checkout.");
 
-      await loadQueue();
+      await loadQueue({ silent: false });
+
+      setMsg("Order berhasil diupdate.");
     } catch (error) {
       setErr(error?.message || "Gagal update order");
     } finally {
@@ -1359,8 +1147,8 @@ export default function CashierPOS() {
     }
   }
 
-  async function checkoutOrder(orderId) {
-    if (checkoutLockRef.current || checkoutBusy) return;
+  async function processCheckout() {
+    if (!openOrder || checkoutLockRef.current) return;
 
     checkoutLockRef.current = true;
     setCheckoutBusy(true);
@@ -1368,58 +1156,47 @@ export default function CashierPOS() {
     setMsg("");
 
     try {
-      if (!shift) throw new Error("Shift belum OPEN.");
-
-      if (openOrder?.id === orderId && openOrder.status !== "PENDING_PAID") {
-        throw new Error("Centang 'Sudah bayar' dulu sebelum checkout.");
+      if (editMode) throw new Error("Simpan atau batalkan edit order dulu.");
+      if (checkout.paymentMethod === "CASH" && !checkoutCalc.cashEnough) {
+        throw new Error("Nominal uang tunai belum cukup.");
       }
 
-      const payload = {
-        manualDiscount: Number(checkout.manualDiscount || 0),
-        paymentMethod:
-          checkout.paymentMethod === "QRIS"
-            ? "QRIS"
-            : checkout.paymentMethod === "TRANSFER"
-            ? "TRANSFER"
-            : "CASH",
-        note: checkout.note || null,
-        promoIds: checkout.promoIds || [],
-      };
-
-      if (!["CASH", "QRIS", "TRANSFER"].includes(checkout.paymentMethod)) {
-        throw new Error("Pilih metode bayar dulu (CASH / QRIS / TRANSFER).");
-      }
-
-      const response = await apiPost(`/api/orders/${orderId}/checkout`, payload, token);
+      const method = PAYMENT_METHODS.includes(checkout.paymentMethod)
+        ? checkout.paymentMethod
+        : "CASH";
 
       try {
-        const [sum, mv] = await Promise.all([
-          apiGet("/api/shifts/summary", token),
-          apiGet("/api/cash/movements", token),
-        ]);
+        await apiPost(`/api/orders/${openOrder.id}/paid`, { paid: true }, token);
+      } catch {
+        // Backend lama mungkin belum punya endpoint paid.
+        // File backend akan kita rapikan di tahap berikutnya.
+      }
 
-        setSummary(sum.summary);
-        setMovements(mv.movements);
-      } catch (_) {}
-
-      setMsg(
-        `Checkout sukses. ID: ${response.saleId} | Total Customer: ${rupiah(
-          response.netTotal
-        )}${
-          Number(response.platformFeeAmount || 0) > 0
-            ? ` | Fee: ${rupiah(response.platformFeeAmount)} | Bersih Outlet: ${rupiah(
-                response.netAfterPlatformFee
-              )}`
-            : ""
-        }`
+      const response = await apiPost(
+        `/api/orders/${openOrder.id}/checkout`,
+        {
+          manualDiscount: Number(checkout.manualDiscount || 0),
+          paymentMethod: method,
+          note: checkout.note || null,
+          promoIds: checkout.promoIds || [],
+          cashReceived:
+            method === "CASH" ? Number(cashReceived || 0) : Number(checkoutCalc.netTotal || 0),
+        },
+        token
       );
 
-      setModalOpen(false);
-      setOpenOrder(null);
+      exitCheckoutView();
 
-      await loadQueue();
+      await loadSummaryAndCash();
+      await loadQueue({ silent: false });
+
+      setMsg(
+        `Pembayaran sukses. Total: ${rupiah(response.netTotal || checkoutCalc.netTotal)}${
+          method === "CASH" ? ` • Kembalian: ${rupiah(checkoutCalc.change)}` : ""
+        }`
+      );
     } catch (error) {
-      setErr(error?.message || "Gagal checkout order");
+      setErr(error?.message || "Gagal proses pembayaran");
     } finally {
       setCheckoutBusy(false);
       checkoutLockRef.current = false;
@@ -1427,57 +1204,42 @@ export default function CashierPOS() {
   }
 
   async function submitCashMovement() {
+    setCashBusy(true);
     setErr("");
     setMsg("");
 
     try {
       if (!shift) throw new Error("Buka shift dulu.");
 
-      const payload = {
-        type: cashMoveType,
-        amount: Number(cashMoveAmount || 0),
-        note: cashMoveNote,
-      };
-
-      await apiPost("/api/cash/movements", payload, token);
-
-      const [movementResponse, summaryResponse] = await Promise.all([
-        apiGet("/api/cash/movements", token),
-        apiGet("/api/shifts/summary", token),
-      ]);
-
-      setMovements(movementResponse.movements);
-      setSummary(summaryResponse.summary);
+      await apiPost(
+        "/api/cash/movements",
+        {
+          type: cashMoveType,
+          amount: Number(cashMoveAmount || 0),
+          note: cashMoveNote || "",
+        },
+        token
+      );
 
       setCashMoveAmount(0);
       setCashMoveNote("");
+
+      await loadSummaryAndCash();
+
       setMsg("Cash movement tersimpan.");
     } catch (error) {
       setErr(error?.message || "Gagal simpan cash movement");
+    } finally {
+      setCashBusy(false);
     }
-  }
-
-  function logout() {
-    localStorage.removeItem("cashier_token");
-    localStorage.removeItem("cashier_cartId");
-    localStorage.removeItem("cashier_cartName");
-
-    disconnectSocket();
-    nav("/cashier");
   }
 
   function csvEscape(value) {
-    const s = String(value ?? "");
-
-    if (s.includes('"') || s.includes(",") || s.includes("\n")) {
-      return `"${s.replace(/"/g, '""')}"`;
+    const text = String(value ?? "");
+    if (text.includes('"') || text.includes(",") || text.includes("\n")) {
+      return `"${text.replace(/"/g, '""')}"`;
     }
-
-    return s;
-  }
-
-  function toCSV(rows) {
-    return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    return text;
   }
 
   function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
@@ -1487,35 +1249,22 @@ export default function CashierPOS() {
 
     anchor.href = url;
     anchor.download = filename;
-
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
 
-    setTimeout(() => URL.revokeObjectURL(url), 2500);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
-  function exportMovementsCSV(list, label) {
-    const dayKey = new Date().toLocaleDateString("sv-SE");
-
-    const rows = [
-      ["createdAt", "type", "amount", "note"],
-      ...(list || []).map((movement) => [
-        new Date(movement.createdAt).toLocaleString("id-ID"),
-        movement.type,
-        Number(movement.amount || 0),
-        movement.note || "",
-      ]),
-    ];
-
-    downloadTextFile(`cash-movements-${label}-${dayKey}.csv`, toCSV(rows));
+  function toCSV(rows) {
+    return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
   }
 
   function exportShiftCSV() {
     const dayKey = new Date().toLocaleDateString("sv-SE");
     const s = summary || {};
 
-    const head = [
+    const rows = [
       ["Cart", cartName],
       ["ExportedAt", new Date().toLocaleString("id-ID")],
       [],
@@ -1527,26 +1276,990 @@ export default function CashierPOS() {
       ["expectedCash", Number(s.expectedCash || 0)],
       [],
       ["createdAt", "type", "amount", "note"],
+      ...(movements || []).map((movement) => [
+        new Date(movement.createdAt).toLocaleString("id-ID"),
+        movement.type,
+        Number(movement.amount || 0),
+        movement.note || "",
+      ]),
     ];
 
-    const body = (movements || []).map((movement) => [
-      new Date(movement.createdAt).toLocaleString("id-ID"),
-      movement.type,
-      Number(movement.amount || 0),
-      movement.note || "",
-    ]);
-
-    downloadTextFile(`shift-summary-${dayKey}.csv`, toCSV([...head, ...body]));
+    downloadTextFile(`shift-summary-${dayKey}.csv`, toCSV(rows));
   }
 
-  function closeOrderModal() {
-    setModalOpen(false);
-    setOpenOrder(null);
-    setEditMode(false);
-    setEditItems([]);
-    setEditNote("");
-    setPaidBusy(false);
-    setEditBusy(false);
+  function logout() {
+    localStorage.removeItem("cashier_token");
+    localStorage.removeItem("cashier_cartId");
+    localStorage.removeItem("cashier_cartName");
+    disconnectSocket();
+    nav("/cashier");
+  }
+
+  function renderShiftClosed() {
+    return (
+      <div className="cashier-open-layout">
+        <section className="pos-card cashier-card cashier-card--main">
+          <SectionTitle
+            title="Buka Shift"
+            subtitle="Isi kas awal dan pilih stok awal yang dibawa ke gerobak."
+            action={<span className="pill pill--neutral">Shift Closed</span>}
+          />
+
+          <div className="cashier-open-top">
+            <label className="cashier-field">
+              <span>Kas awal</span>
+              <input
+                type="number"
+                min="0"
+                value={openingCash}
+                onChange={(e) => setOpeningCash(e.target.value)}
+                placeholder="0"
+              />
+            </label>
+
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={() => loadOpeningStocks({ preserve: true })}
+              disabled={invLoading}
+            >
+              {invLoading ? "Sync..." : "Refresh Stok"}
+            </button>
+          </div>
+
+          <Alert type="danger">{invErr}</Alert>
+
+          {!invStocks.length ? (
+            <EmptyState>Belum ada data stok gerobak.</EmptyState>
+          ) : (
+            <div className="cashier-open-stock-list">
+              {invStocks.map((stock) => (
+                <div key={stock.id} className="cashier-open-stock-row">
+                  <label className="cashier-check">
+                    <input
+                      type="checkbox"
+                      checked={!!openStockChecked[stock.id]}
+                      onChange={(e) =>
+                        setOpenStockChecked((prev) => ({
+                          ...prev,
+                          [stock.id]: e.target.checked,
+                        }))
+                      }
+                    />
+                    <span>
+                      <b>{stock.name}</b>
+                      <small>
+                        Sisa cart: {Number(stock.qty || 0)} {stock.unit || ""}
+                      </small>
+                    </span>
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    value={openStockQty[stock.id] ?? 0}
+                    disabled={!openStockChecked[stock.id]}
+                    onChange={(e) =>
+                      setOpenStockQty((prev) => ({
+                        ...prev,
+                        [stock.id]: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            className="btn primary cashier-wide-action"
+            type="button"
+            onClick={openShift}
+            disabled={openShiftBusy}
+          >
+            {openShiftBusy ? "Membuka Shift..." : "Buka Shift"}
+          </button>
+        </section>
+
+        <aside className="pos-card cashier-card cashier-card--side">
+          <SectionTitle
+            title="Ringkasan Stok Central"
+            subtitle="Referensi stok pusat sebelum shift dibuka."
+          />
+
+          {!invCentralStocks.length ? (
+            <EmptyState>Belum ada stok central.</EmptyState>
+          ) : (
+            <div className="cashier-mini-list">
+              {invCentralStocks.slice(0, 12).map((stock) => (
+                <div key={stock.id} className="cashier-mini-row">
+                  <span>{stock.name}</span>
+                  <b>
+                    {Number(stock.qty || 0)} {stock.unit || ""}
+                  </b>
+                </div>
+              ))}
+            </div>
+          )}
+        </aside>
+      </div>
+    );
+  }
+
+  function renderMenuCards() {
+    return (
+      <section className="pos-card c5-card c5-menu-panel">
+        <SectionTitle
+          title="Menu"
+          subtitle="Pilih produk, lalu masukkan ke draft order."
+        />
+
+        <Tabs items={CHANNEL_TABS} value={activeChannel} onChange={setActiveChannel} />
+
+        <div className="c5-search">
+          <input
+            value={productSearch}
+            onChange={(e) => setProductSearch(e.target.value)}
+            placeholder="Cari menu..."
+          />
+        </div>
+
+        <div className="c5m-grid">
+          {!visibleProducts.length ? (
+            <EmptyState>Tidak ada menu yang cocok.</EmptyState>
+          ) : (
+            visibleProducts.map((product) => (
+              <article key={product.id} className="c5m-card">
+                <div className="c5m-card__top">
+                  <div className="c5m-card__title">
+                    <h4>{product.name}</h4>
+                    <p>{getChannelLabel(activeChannel)}</p>
+                  </div>
+                </div>
+
+                <div className="c5m-card__actions">
+                  <button
+                    type="button"
+                    className="c5m-action"
+                    onClick={() => addProduct(product, "SMALL")}
+                  >
+                    <span className="c5m-action__label">Small</span>
+                    <span className="c5m-action__price">{rupiah(product.priceSmall)}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="c5m-action"
+                    onClick={() => addProduct(product, "LARGE")}
+                  >
+                    <span className="c5m-action__label">Large</span>
+                    <span className="c5m-action__price">{rupiah(product.priceLarge)}</span>
+                  </button>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  function renderOrderDraft() {
+  const draftQty = activeState.cart.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+
+  return (
+    <section className="pos-card c5-card c5-draft-panel">
+      <SectionTitle
+        title="Draft Order"
+        subtitle="Semua order harus dikirim ke antrian sebelum checkout."
+        action={
+          <button
+            className="btn secondary btn--sm"
+            type="button"
+            onClick={clearActiveCart}
+            disabled={!activeState.cart.length}
+          >
+            Reset
+          </button>
+        }
+      />
+
+      <div className="c5-draft-summary">
+        <div>
+          <span>Channel</span>
+          <b>{getChannelLabel(activeChannel)}</b>
+        </div>
+        <div>
+          <span>Qty</span>
+          <b>{draftQty}</b>
+        </div>
+        <div>
+          <span>Total</span>
+          <b>{rupiah(cartCalc.gross)}</b>
+        </div>
+      </div>
+
+      <div className="c5-form-stack">
+        <label className="c5-field">
+          <span>Nama / label antrian</span>
+          <input
+            value={activeState.customerName}
+            onChange={(e) => setActiveState({ customerName: e.target.value })}
+            placeholder="Opsional. Jika kosong otomatis."
+          />
+        </label>
+
+        <label className="c5-field">
+          <span>Catatan order</span>
+          <textarea
+            rows={2}
+            value={activeState.note}
+            onChange={(e) => setActiveState({ note: e.target.value })}
+            placeholder="Contoh: saus dipisah, pedas, dll."
+          />
+        </label>
+      </div>
+
+      <div className="c5-draft-items">
+        {!activeState.cart.length ? (
+          <div className="c5-draft-empty">
+            <b>Belum ada item</b>
+            <span>Klik tombol Small atau Large pada menu.</span>
+          </div>
+        ) : (
+          activeState.cart.map((item) => (
+            <div key={item.key} className="c5-draft-item">
+              <div className="c5-draft-item__top">
+                <div>
+                  <h4>{item.name}</h4>
+                  <p>
+                    {item.portion} • {rupiah(item.price)}
+                  </p>
+                </div>
+                <strong>{rupiah(item.subtotal)}</strong>
+              </div>
+
+              <div className="c5-draft-item__bottom">
+                <div className="c5-qty">
+                  <button type="button" onClick={() => updateQty(item.key, -1)}>
+                    -
+                  </button>
+                  <b>{item.qty}</b>
+                  <button type="button" onClick={() => updateQty(item.key, 1)}>
+                    +
+                  </button>
+                </div>
+
+                <input
+                  value={item.itemNote || ""}
+                  onChange={(e) => updateCartNote(item.key, e.target.value)}
+                  placeholder="Catatan item"
+                />
+
+                <button
+                  className="c5-remove"
+                  type="button"
+                  onClick={() => removeCartItem(item.key)}
+                >
+                  Hapus
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="c5-draft-footer">
+        <div>
+          <span>Total Menu</span>
+          <strong>{rupiah(cartCalc.gross)}</strong>
+        </div>
+
+        {activeChannel === "GOJEK" ? (
+          <small>
+            Fee Gojek {Number(cartCalc.feePercent || 0).toFixed(2)}% akan dihitung saat checkout.
+          </small>
+        ) : null}
+
+        <button
+          className="btn primary c5-send-queue"
+          type="button"
+          onClick={enqueueOrder}
+          disabled={enqueueBusy || !activeState.cart.length || !shift}
+        >
+          {enqueueBusy
+            ? "Mengirim..."
+            : !shift
+            ? "Buka Shift Dulu"
+            : !activeState.cart.length
+            ? "Pilih Menu Dulu"
+            : "Kirim ke Antrian"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+  function renderQueuePanel() {
+    return (
+      <aside className="pos-card cashier-card cashier-card--queue">
+        <SectionTitle
+          title="Antrian"
+          subtitle="Buka order dari sini untuk proses pembayaran."
+          action={
+            <button
+              className="btn secondary btn--sm"
+              type="button"
+              onClick={() => loadQueue({ silent: false })}
+              disabled={queueLoading}
+            >
+              {queueLoading ? "Sync..." : "Refresh"}
+            </button>
+          }
+        />
+
+        <Tabs items={CHANNEL_TABS} value={activeChannel} onChange={setActiveChannel} />
+
+        <Alert type="danger">{queueErr}</Alert>
+
+        <div className="cashier-queue-summary">
+          <Kpi label="Open" value={activeQueue.length} />
+          <Kpi
+            label="Paid"
+            value={activeQueue.filter((order) => order.status === "PENDING_PAID").length}
+          />
+        </div>
+
+        {!activeQueue.length ? (
+          <EmptyState>Tidak ada antrian {getChannelLabel(activeChannel)}.</EmptyState>
+        ) : (
+          <div className="cashier-queue-list">
+            {activeQueue.map((order) => (
+              <div
+                key={order.id}
+                className={`cashier-queue-card ${order.status === "PENDING_PAID" ? "is-paid" : ""}`}
+              >
+                <div className="cashier-queue-card__top">
+                  <div>
+                    <h4>{order.customerName}</h4>
+                    <p>
+                      {toTime(order.createdAt)} • {order.itemCount || 0} item
+                    </p>
+                  </div>
+
+                  <span className={order.status === "PENDING_PAID" ? "pill pill--ok" : "pill pill--neutral"}>
+                    {order.status === "PENDING_PAID" ? "Paid" : "Open"}
+                  </span>
+                </div>
+
+                <div className="cashier-queue-card__bottom">
+                  <b>{rupiah(order.grossTotal)}</b>
+                  <button
+                    className="btn primary btn--sm"
+                    type="button"
+                    onClick={() => openOrderCheckout(order.id)}
+                  >
+                    Checkout
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </aside>
+    );
+  }
+
+  function renderSellTab() {
+  if (checkoutView && openOrder) return renderCheckoutPage();
+
+  return (
+    <div className="c5-sell-page">
+      <section className="c5-top-stats">
+        <Kpi label="Shift" value={shift ? "OPEN" : "CLOSED"} hint={cartName} tone="soft" />
+        <Kpi label="Regular Queue" value={regularQueue.length} />
+        <Kpi label="Gojek Queue" value={gojekQueue.length} />
+        <Kpi label="Expected Cash" value={rupiah(summary?.expectedCash || 0)} tone="soft" />
+      </section>
+
+      <div className="c5-sell-grid">
+        <div>{renderMenuCards()}</div>
+        <div>{renderOrderDraft()}</div>
+        <div>{renderQueuePanel()}</div>
+      </div>
+    </div>
+  );
+}
+
+  function renderCheckoutPage() {
+    const channel = normalizeChannel(openOrder.salesChannel);
+    const products = getChannelProducts(meta, channel);
+    const promos = getChannelPromos(meta, channel);
+    const productsMap = new Map(products.map((p) => [p.id, p]));
+    const isCash = checkout.paymentMethod === "CASH";
+
+    return (
+      <div className="cashier-checkout-page">
+        <section className="cashier-checkout-topbar">
+          <button className="btn secondary" type="button" onClick={exitCheckoutView}>
+            ← Kembali ke Order
+          </button>
+
+          <div>
+            <h2>Checkout Pesanan</h2>
+            <p>
+              {openOrder.customerName} • {getChannelLabel(channel)} • {openOrder.status}
+            </p>
+          </div>
+
+          <span className="pill pill--soft">#{String(openOrder.id || "").slice(-6)}</span>
+        </section>
+
+        <div className="cashier-checkout-layout">
+          <section className="pos-card cashier-checkout-detail">
+            <div className="cashier-checkout-detail__head">
+              <div>
+                <h3>Detail Pesanan</h3>
+                <p>Review item sebelum pembayaran diproses.</p>
+              </div>
+
+              <button
+                className="btn secondary btn--sm"
+                type="button"
+                onClick={() => {
+                  setEditMode((prev) => !prev);
+                  setEditItems(buildEditRows(openOrder));
+                  setEditNote(openOrder.note || "");
+                }}
+              >
+                {editMode ? "Batal Edit" : "Edit Pesanan"}
+              </button>
+            </div>
+
+            {!editMode ? (
+              <div className="cashier-checkout-items">
+                {(openOrder.items || []).map((item) => (
+                  <div key={item.id} className="cashier-checkout-item">
+                    <div className="cashier-checkout-item__image">
+                      <span>{String(item.product?.name || "M").slice(0, 1).toUpperCase()}</span>
+                    </div>
+
+                    <div className="cashier-checkout-item__info">
+                      <h4>{item.product?.name || item.productId}</h4>
+                      <p>
+                        {item.qty}x • {item.portion} • {rupiah(item.price || 0)}
+                      </p>
+                      {item.itemNote ? <small>{item.itemNote}</small> : null}
+                    </div>
+
+                    <strong>{rupiah(Number(item.price || 0) * Number(item.qty || 0))}</strong>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="cashier-edit-list">
+                {editItems.map((row) => (
+                  <div key={row.rowId} className="cashier-edit-row">
+                    <select
+                      value={row.productId || ""}
+                      onChange={(e) => patchEditRow(row.rowId, { productId: e.target.value })}
+                    >
+                      {products.map((product) => (
+                        <option key={product.id} value={product.id}>
+                          {product.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={row.portion}
+                      onChange={(e) => patchEditRow(row.rowId, { portion: e.target.value })}
+                    >
+                      <option value="SMALL">SMALL</option>
+                      <option value="LARGE">LARGE</option>
+                    </select>
+
+                    <input
+                      type="number"
+                      min="1"
+                      value={row.qty}
+                      onChange={(e) => patchEditRow(row.rowId, { qty: e.target.value })}
+                    />
+
+                    <input
+                      value={row.itemNote}
+                      onChange={(e) => patchEditRow(row.rowId, { itemNote: e.target.value })}
+                      placeholder="Catatan"
+                    />
+
+                    <button type="button" onClick={() => removeEditRow(row.rowId)}>
+                      Hapus
+                    </button>
+                  </div>
+                ))}
+
+                <label className="cashier-field">
+                  <span>Catatan order</span>
+                  <textarea rows={2} value={editNote} onChange={(e) => setEditNote(e.target.value)} />
+                </label>
+
+                <div className="cashier-actions">
+                  <button className="btn secondary" type="button" onClick={addEditRow}>
+                    Tambah Item
+                  </button>
+                  <button className="btn primary" type="button" onClick={saveOrderEdits} disabled={editBusy}>
+                    {editBusy ? "Menyimpan..." : "Simpan Edit"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="cashier-checkout-total-box">
+              <div>
+                <span>Subtotal</span>
+                <b>{rupiah(checkoutCalc.gross)}</b>
+              </div>
+
+              {channel === "GOJEK" ? (
+                <>
+                  <div>
+                    <span>Fee Gojek {Number(checkoutCalc.feePercent || 0).toFixed(2)}%</span>
+                    <b>- {rupiah(checkoutCalc.platformFeeAmount)}</b>
+                  </div>
+                  <div>
+                    <span>Subtotal Setelah Fee</span>
+                    <b>{rupiah(checkoutCalc.subtotalAfterFee)}</b>
+                  </div>
+                </>
+              ) : null}
+
+              <div>
+                <span>Diskon Manual</span>
+                <b>- {rupiah(checkoutCalc.manualDiscount)}</b>
+              </div>
+
+              <div>
+                <span>Diskon Promo</span>
+                <b>- {rupiah(checkoutCalc.promoDiscount)}</b>
+              </div>
+
+              {checkoutCalc.promoPreview.bonusItems.length ? (
+                <div>
+                  <span>Bonus</span>
+                  <b>
+                    {checkoutCalc.promoPreview.bonusItems
+                      .map((item) => `${item.name} x${item.qty}`)
+                      .join(", ")}
+                  </b>
+                </div>
+              ) : null}
+
+              <div className="cashier-checkout-total-box__grand">
+                <span>Total Tagihan</span>
+                <strong>{rupiah(checkoutCalc.netTotal)}</strong>
+              </div>
+            </div>
+          </section>
+
+          <aside className="pos-card cashier-payment-panel">
+            <SectionTitle
+              title="Pembayaran"
+              subtitle="Pilih metode, isi nominal, lalu proses bayar."
+            />
+
+            <div className="cashier-payment-methods">
+              <button
+                type="button"
+                className={checkout.paymentMethod === "CASH" ? "is-active" : ""}
+                onClick={() => setCheckout((prev) => ({ ...prev, paymentMethod: "CASH" }))}
+              >
+                <span>💵</span>
+                <b>Tunai</b>
+              </button>
+
+              <button
+                type="button"
+                className={checkout.paymentMethod === "QRIS" ? "is-active" : ""}
+                onClick={() => {
+                  setCheckout((prev) => ({ ...prev, paymentMethod: "QRIS" }));
+                  setCashReceived("");
+                }}
+              >
+                <span>▣</span>
+                <b>QRIS</b>
+              </button>
+
+              <button
+                type="button"
+                className={checkout.paymentMethod === "TRANSFER" ? "is-active" : ""}
+                onClick={() => {
+                  setCheckout((prev) => ({ ...prev, paymentMethod: "TRANSFER" }));
+                  setCashReceived("");
+                }}
+              >
+                <span>⇄</span>
+                <b>Transfer</b>
+              </button>
+            </div>
+
+            <div className="cashier-payment-form">
+              <div className="cashier-form-grid">
+                <label className="cashier-field">
+                  <span>Diskon manual</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={checkout.manualDiscount}
+                    onChange={(e) => setCheckout((prev) => ({ ...prev, manualDiscount: e.target.value }))}
+                  />
+                </label>
+
+                <label className="cashier-field">
+                  <span>Metode</span>
+                  <select
+                    value={checkout.paymentMethod}
+                    onChange={(e) => {
+                      setCheckout((prev) => ({ ...prev, paymentMethod: e.target.value }));
+                      if (e.target.value !== "CASH") setCashReceived("");
+                    }}
+                  >
+                    {PAYMENT_METHODS.map((method) => (
+                      <option key={method} value={method}>
+                        {method}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="cashier-field">
+                <span>Catatan checkout</span>
+                <textarea
+                  rows={2}
+                  value={checkout.note}
+                  onChange={(e) => setCheckout((prev) => ({ ...prev, note: e.target.value }))}
+                  placeholder="Catatan pembayaran"
+                />
+              </label>
+            </div>
+
+            <div className="cashier-block">
+              <div className="cashier-block__head">
+                <h4>Promo Checkout</h4>
+              </div>
+
+              {!promos.length ? (
+                <EmptyState>Tidak ada promo aktif.</EmptyState>
+              ) : (
+                <div className="cashier-promo-list">
+                  {promos.map((promo) => {
+                    const checked = checkout.promoIds.includes(promo.id);
+
+                    return (
+                      <label key={promo.id} className={`cashier-promo-card ${checked ? "is-active" : ""}`}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleCheckoutPromo(promo.id)} />
+                        <span>
+                          <b>{promo.name}</b>
+                          <small>{promoText(promo, productsMap)}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {isCash ? (
+              <div className="cashier-cash-box">
+                <label className="cashier-field">
+                  <span>Nominal uang tunai</span>
+                  <div className="cashier-money-input">
+                    <small></small>
+                    <input
+                      type="number"
+                      min="0"
+                      value={cashReceived}
+                      onChange={(e) => setCashReceived(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                </label>
+
+                <div className="cashier-cash-presets">
+                  <button type="button" onClick={() => setCashReceived(String(checkoutCalc.netTotal))}>
+                    PAS
+                  </button>
+                  {cashPresets.map((value) => (
+                    <button key={value} type="button" onClick={() => setCashReceived(String(value))}>
+                      {shortRupiah(value)}
+                    </button>
+                  ))}
+                </div>
+
+                <div className={`cashier-change-box ${checkoutCalc.cashEnough ? "is-ok" : "is-warning"}`}>
+                  <span>Kembalian</span>
+                  <strong>{rupiah(checkoutCalc.change)}</strong>
+                  {!checkoutCalc.cashEnough ? <small>Nominal tunai belum cukup.</small> : null}
+                </div>
+              </div>
+            ) : (
+              <div className="cashier-noncash-box">
+                <span>Total Non-Tunai</span>
+                <strong>{rupiah(checkoutCalc.netTotal)}</strong>
+                <small>Pastikan pembayaran sudah masuk sebelum proses bayar.</small>
+              </div>
+            )}
+
+            <button
+              className="btn primary cashier-process-pay-btn"
+              type="button"
+              onClick={processCheckout}
+              disabled={checkoutBusy || editMode || !checkoutCalc.cashEnough}
+            >
+              {checkoutBusy ? "Memproses..." : "Proses Bayar"}
+            </button>
+
+            <div className="cashier-checkout-secondary-actions">
+              <button className="btn secondary" type="button" onClick={exitCheckoutView}>
+                Simpan Draft
+              </button>
+
+              <button className="btn danger" type="button" onClick={() => cancelOrder(openOrder.id)}>
+                Batalkan
+              </button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
+  function renderCashTab() {
+    const filtered =
+      cashFilter === "ALL"
+        ? movements
+        : movements.filter((movement) => movement.type === cashFilter);
+
+    return (
+      <div className="cashier-grid-2">
+        <section className="pos-card cashier-card">
+          <SectionTitle
+            title="Cash Movement"
+            subtitle="Catat uang masuk atau keluar di luar transaksi penjualan."
+          />
+
+          <div className="cashier-form-grid">
+            <label className="cashier-field">
+              <span>Tipe</span>
+              <select value={cashMoveType} onChange={(e) => setCashMoveType(e.target.value)}>
+                <option value="CASH_IN">Cash In</option>
+                <option value="CASH_OUT">Cash Out</option>
+              </select>
+            </label>
+
+            <label className="cashier-field">
+              <span>Nominal</span>
+              <input
+                type="number"
+                min="0"
+                value={cashMoveAmount}
+                onChange={(e) => setCashMoveAmount(e.target.value)}
+              />
+            </label>
+          </div>
+
+          <label className="cashier-field">
+            <span>Catatan</span>
+            <textarea
+              rows={3}
+              value={cashMoveNote}
+              onChange={(e) => setCashMoveNote(e.target.value)}
+              placeholder="Contoh: beli es batu / tambahan modal"
+            />
+          </label>
+
+          <button className="btn primary cashier-wide-action" type="button" onClick={submitCashMovement} disabled={cashBusy}>
+            {cashBusy ? "Menyimpan..." : "Simpan Cash Movement"}
+          </button>
+        </section>
+
+        <section className="pos-card cashier-card">
+          <SectionTitle
+            title="Riwayat Cash"
+            subtitle="Cash in dan cash out selama shift."
+            action={
+              <button className="btn secondary btn--sm" type="button" onClick={exportShiftCSV}>
+                Export CSV
+              </button>
+            }
+          />
+
+          <Tabs
+            items={[
+              { value: "ALL", label: "Semua" },
+              { value: "CASH_IN", label: "Cash In" },
+              { value: "CASH_OUT", label: "Cash Out" },
+            ]}
+            value={cashFilter}
+            onChange={setCashFilter}
+          />
+
+          {!filtered.length ? (
+            <EmptyState>Belum ada cash movement.</EmptyState>
+          ) : (
+            <div className="cashier-mini-list">
+              {filtered.map((movement) => (
+                <div key={movement.id} className="cashier-mini-row">
+                  <span>
+                    <b>{movement.type}</b>
+                    <small>{movement.note || "-"}</small>
+                  </span>
+                  <b>{rupiah(movement.amount)}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
+
+  function renderShiftTab() {
+    const expectedCash = Number(summary?.expectedCash || 0);
+    const closing = Number(closingCash || 0);
+    const variance = closing - expectedCash;
+
+    return (
+      <div className="cashier-grid-2">
+        <section className="pos-card cashier-card">
+          <SectionTitle
+            title="Ringkasan Shift"
+            subtitle="Pantau kas dan penjualan shift berjalan."
+            action={
+              <button className="btn secondary btn--sm" type="button" onClick={loadSummaryAndCash}>
+                Refresh
+              </button>
+            }
+          />
+
+          <section className="cashier-summary-bar cashier-summary-bar--compact">
+            <Kpi label="Kas Awal" value={rupiah(summary?.openingCash)} />
+            <Kpi label="Cash Sales" value={rupiah(summary?.cashSales)} />
+            <Kpi label="QRIS Sales" value={rupiah(summary?.qrisSales)} />
+            <Kpi label="Cash In" value={rupiah(summary?.cashIn)} />
+            <Kpi label="Cash Out" value={rupiah(summary?.cashOut)} />
+            <Kpi label="Expected Cash" value={rupiah(summary?.expectedCash)} tone="soft" />
+          </section>
+
+          <div className="cashier-block">
+            <div className="cashier-form-grid">
+              <label className="cashier-field">
+                <span>Kas fisik saat tutup</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={closingCash}
+                  onChange={(e) => setClosingCash(e.target.value)}
+                />
+              </label>
+            </div>
+
+            <section className="cashier-summary-bar cashier-summary-bar--compact">
+              <Kpi label="Expected" value={rupiah(expectedCash)} />
+              <Kpi label="Fisik" value={rupiah(closing)} />
+              <Kpi
+                label="Selisih"
+                value={rupiah(Math.abs(variance))}
+                hint={variance === 0 ? "PAS" : variance > 0 ? "LEBIH" : "KURANG"}
+                tone="soft"
+              />
+            </section>
+
+            <div className="cashier-actions">
+              <button className="btn secondary" type="button" onClick={exportShiftCSV}>
+                Export Shift CSV
+              </button>
+              <button className="btn danger" type="button" onClick={() => setCloseShiftOpen(true)}>
+                Tutup Shift
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="pos-card cashier-card">
+          <SectionTitle title="Status Sistem" subtitle="Informasi cepat status kasir." />
+
+          <div className="cashier-mini-list">
+            <div className="cashier-mini-row">
+              <span>Cart</span>
+              <b>{cartName}</b>
+            </div>
+            <div className="cashier-mini-row">
+              <span>Meta Sync</span>
+              <b>{syncText}</b>
+            </div>
+            <div className="cashier-mini-row">
+              <span>Antrian Regular</span>
+              <b>{regularQueue.length}</b>
+            </div>
+            <div className="cashier-mini-row">
+              <span>Antrian Gojek</span>
+              <b>{gojekQueue.length}</b>
+            </div>
+          </div>
+
+          <Alert type="danger">{metaSyncErr}</Alert>
+        </section>
+      </div>
+    );
+  }
+
+  function renderCloseShiftModal() {
+    if (!closeShiftOpen) return null;
+
+    return (
+      <div className="modal-backdrop">
+        <div className="modal-card cashier-close-modal">
+          <div className="modal-head">
+            <div>
+              <h3>Konfirmasi Tutup Shift</h3>
+              <p>Pastikan kas fisik sudah dihitung.</p>
+            </div>
+            <button className="icon-btn" type="button" onClick={() => setCloseShiftOpen(false)}>
+              ×
+            </button>
+          </div>
+
+          <section className="cashier-summary-bar cashier-summary-bar--compact">
+            <Kpi label="Expected Cash" value={rupiah(summary?.expectedCash)} />
+            <Kpi label="Kas Fisik" value={rupiah(closingCash)} />
+            <Kpi
+              label="Selisih"
+              value={rupiah(Math.abs(Number(closingCash || 0) - Number(summary?.expectedCash || 0)))}
+            />
+          </section>
+
+          <label className="cashier-field">
+            <span>Kas fisik</span>
+            <input
+              type="number"
+              min="0"
+              value={closingCash}
+              onChange={(e) => setClosingCash(e.target.value)}
+            />
+          </label>
+
+          <div className="modal-footer">
+            <button className="btn secondary" type="button" onClick={() => setCloseShiftOpen(false)}>
+              Batal
+            </button>
+            <button className="btn danger" type="button" onClick={closeShift} disabled={closeShiftBusy}>
+              {closeShiftBusy ? "Menutup..." : "Tutup Shift"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!token) {
@@ -1564,7 +2277,7 @@ export default function CashierPOS() {
     return (
       <LoadingScreen
         title="Menyiapkan Mode Kasir…"
-        subtitle="Sinkronisasi menu, promo, dan shift."
+        subtitle="Sinkronisasi menu, promo, shift, dan antrian."
         hint="Biasanya hanya beberapa detik."
         tone="accent"
       />
@@ -1573,1484 +2286,68 @@ export default function CashierPOS() {
 
   return (
     <div className="pos-bg">
-      <div className="pos-shell">
+      <div className="pos-shell cashier-v5-shell">
         <div className="pos-stack">
-          <div className="pos-card pos-header">
-            <div className="pos-header-row">
-              <div className="pos-title-wrap">
+          <header className="pos-card cashier-header">
+            <div className="cashier-header__main">
+              <div>
+                <p className="cashier-header__eyebrow">Cashier Workspace</p>
                 <h2 className="pos-title">{cartName}</h2>
-
                 <div className="pos-chips">
                   {shift ? (
                     <span className="pill pill--ok">Shift OPEN</span>
                   ) : (
                     <span className="pill pill--neutral">Shift CLOSED</span>
                   )}
-
-                  <span className="pill pill--soft">
-                    Regular <b>{regularQueue.length}</b>
-                  </span>
-
-                  <span className="pill pill--soft">
-                    Gojek <b>{gojekQueue.length}</b>
-                  </span>
-
-                  <span className="pill pill--soft">
-                    Sync <b>{syncText}</b>
-                  </span>
+                  <span className="pill pill--soft">Regular {regularQueue.length}</span>
+                  <span className="pill pill--soft">Gojek {gojekQueue.length}</span>
+                  <span className="pill pill--soft">Sync {syncText}</span>
                 </div>
               </div>
 
-              <div className="pos-header-actions">
-                <button className="btn secondary btn--sm" type="button" onClick={logout}>
-                  Logout
-                </button>
+              <div className="cashier-header__actions">
+                {shift ? (
+                  <button className="btn secondary btn--sm" type="button" onClick={() => loadQueue({ silent: false })}>
+                    Refresh
+                  </button>
+                ) : null}
 
                 {shift ? (
-                  <button
-                    className="btn danger btn--sm"
-                    type="button"
-                    onClick={() => setCloseShiftOpen(true)}
-                  >
+                  <button className="btn danger btn--sm" type="button" onClick={() => setCloseShiftOpen(true)}>
                     Tutup Shift
                   </button>
                 ) : null}
+
+                <button className="btn secondary btn--sm" type="button" onClick={logout}>
+                  Logout
+                </button>
               </div>
             </div>
 
-            {err ? (
-              <div className="toast toast--danger" style={{ marginTop: 12 }}>
-                {err}
-              </div>
-            ) : null}
-
-            {msg ? (
-              <div className="toast" style={{ marginTop: 12 }}>
-                {msg}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="pos-grid pos-grid--cashier">
-            <div className="pos-col">
-              <div className="pos-card">
-                {!shift ? (
-                  <div className="pos-section">
-                    <div className="pos-section-head">
-                      <div>
-                        <h3 className="pos-h3">Buka Shift</h3>
-                        <div className="card-subtitle">
-                          Input modal awal dan stok awal sebelum mulai jualan.
-                        </div>
-                      </div>
-
-                      <span className="badge">Shift Closed</span>
-                    </div>
-
-                    <div className="pos-form">
-                      <div className="pos-field">
-                        <label>Modal Kas Awal</label>
-                        <input
-                          className="input"
-                          type="number"
-                          value={openingCash}
-                          onChange={(event) => setOpeningCash(event.target.value)}
-                          placeholder="Contoh: 100000"
-                        />
-                      </div>
-
-                      <section className="pos-soft-box">
-                        <div className="pos-section-head">
-                          <div>
-                            <h3 className="pos-h3">Stok Awal Gerobak</h3>
-                            <div className="card-subtitle">
-                              Centang bahan yang dibawa hari ini. Cireng wajib.
-                            </div>
-                          </div>
-
-                          <button
-                            className="btn secondary btn--sm"
-                            type="button"
-                            onClick={() => loadOpeningStocks({ preserve: true })}
-                            disabled={invLoading || openShiftBusy}
-                          >
-                            {invLoading ? "Memuat..." : "Refresh Bahan"}
-                          </button>
-                        </div>
-
-                        {invErr ? (
-                          <div className="toast toast--danger" style={{ marginTop: 12 }}>
-                            {invErr}
-                          </div>
-                        ) : null}
-
-                        {invLoading ? (
-                          <div className="loading-inline muted" style={{ marginTop: 12 }}>
-                            <span className="spinner spinner--sm" aria-hidden="true" />
-                            Memuat daftar bahan...
-                          </div>
-                        ) : null}
-
-                        {!invLoading && invStocks?.length ? (
-                          <div className="adm-list" style={{ marginTop: 12 }}>
-                            {invStocks.map((stock) => {
-                              const core = isCoreStockName(stock.name);
-                              const checked = !!openStockChecked[stock.id];
-
-                              return (
-                                <label key={stock.id} className="check-card">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={core}
-                                    onChange={(event) =>
-                                      setOpenStockChecked((prev) => ({
-                                        ...prev,
-                                        [stock.id]: event.target.checked,
-                                      }))
-                                    }
-                                  />
-
-                                  <div className="check-card__body">
-                                    <span className="check-card__title">
-                                      {stock.name}{" "}
-                                      <span className="muted">({stock.unit})</span>
-                                    </span>
-                                    <span className="check-card__sub">
-                                      Stok terakhir: {Number(stock.qty ?? 0)}
-                                    </span>
-                                  </div>
-
-                                  {core ? <span className="check-state active">Wajib</span> : null}
-
-                                  <input
-                                    className="input"
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    disabled={!checked}
-                                    value={openStockQty[stock.id] ?? 0}
-                                    onChange={(event) =>
-                                      setOpenStockQty((prev) => ({
-                                        ...prev,
-                                        [stock.id]: event.target.value,
-                                      }))
-                                    }
-                                    style={{ maxWidth: 140 }}
-                                  />
-                                </label>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-
-                        {!invLoading && !invStocks?.length ? (
-                          <EmptyBox>
-                            Inventory belum aktif atau belum ada bahan. Admin perlu tambah
-                            ingredient seperti Cireng.
-                          </EmptyBox>
-                        ) : null}
-                      </section>
-
-                      {invCentralStocks?.length ? (
-                        <details className="pos-soft-box">
-                          <summary className="muted" style={{ cursor: "pointer" }}>
-                            Lihat stok CENTRAL read-only • {invCentralStocks.length} bahan
-                          </summary>
-
-                          <div className="adm-list" style={{ marginTop: 12 }}>
-                            {invCentralStocks.map((stock) => (
-                              <div key={stock.id} className="adm-list-item">
-                                <div className="adm-list-top" style={{ alignItems: "center" }}>
-                                  <div>
-                                    <div className="adm-list-title">
-                                      {stock.name}{" "}
-                                      <span className="muted">({stock.unit})</span>
-                                    </div>
-                                    <div className="adm-list-meta">
-                                      Bahan central dikelola Admin.
-                                    </div>
-                                  </div>
-
-                                  <span className="adm-badge">Qty {Number(stock.qty ?? 0)}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      ) : null}
-
-                      <div className="pos-actions">
-                        <button
-                          className="btn"
-                          type="button"
-                          onClick={openShift}
-                          disabled={openShiftBusy || invLoading}
-                        >
-                          {openShiftBusy ? "Membuka Shift..." : "Buka Shift"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="pos-section" style={{ paddingBottom: 10 }}>
-                      <div className="pos-section-head">
-                        <div>
-                          <h3 className="pos-h3">Mode Kasir</h3>
-                          <div className="card-subtitle">
-                            Pilih alur kerja: jualan, Gojek, cash, shift, atau stok.
-                          </div>
-                        </div>
-                      </div>
-
-                      <Tabs
-                        items={[
-                          { value: "SELL", label: "Jualan" },
-                          { value: "GOJEK", label: "Gojek" },
-                          { value: "CASH", label: "Cash" },
-                          { value: "SHIFT", label: "Shift" },
-                          { value: "STOCK", label: "Stok" },
-                        ]}
-                        value={mainTab}
-                        onChange={setMainTab}
-                      />
-                    </div>
-
-                    {mainTab === "SELL" || mainTab === "GOJEK" ? (
-                      <>
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Menu {activeChannelLabel}</h3>
-                              <div className="card-subtitle">
-                                Pilih ukuran produk untuk masuk ke keranjang.
-                              </div>
-                            </div>
-
-                            <span className="badge">{activeMetaProducts.length} menu</span>
-                          </div>
-
-                          {metaSyncErr ? (
-                            <div className="toast toast--danger">
-                              Sync error: {metaSyncErr}
-                            </div>
-                          ) : null}
-
-                          <div className="grid-products">
-                            {activeMetaProducts.map((product) => (
-                              <div key={product.id} className="prod">
-                                <div className="prod-head">
-                                  <div>
-                                    <b className="prod-title">{product.name}</b>
-                                    <small className="muted">
-                                      Kecil {rupiah(product.priceSmall)} • Besar{" "}
-                                      {rupiah(product.priceLarge)}
-                                    </small>
-
-                                    {product.hasPriceOverride ? (
-                                      <small
-                                        className="muted"
-                                        style={{ display: "block", marginTop: 4 }}
-                                      >
-                                        Harga khusus gerobak ini
-                                      </small>
-                                    ) : null}
-                                  </div>
-                                </div>
-
-                                <div className="prod-actions prod-actions--split">
-                                  <button
-                                    className="btn secondary"
-                                    type="button"
-                                    onClick={() => addProduct(product, "SMALL")}
-                                  >
-                                    Kecil
-                                  </button>
-
-                                  <button
-                                    className="btn secondary"
-                                    type="button"
-                                    onClick={() => addProduct(product, "LARGE")}
-                                  >
-                                    Besar
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-
-                            {!activeMetaProducts.length ? (
-                              <EmptyBox>Belum ada menu aktif.</EmptyBox>
-                            ) : null}
-                          </div>
-                        </section>
-
-                        <div className="hr" />
-
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Promo {activeChannelLabel}</h3>
-                              <div className="card-subtitle">
-                                Pilih promo yang ingin dipakai.
-                              </div>
-                            </div>
-
-                            <span className="badge">{activePromoIds.length} dipilih</span>
-                          </div>
-
-                          <div className="grid-products">
-                            {activeMetaPromos.map((promo) => {
-                              const active = activePromoIds.includes(promo.id);
-
-                              return (
-                                <div
-                                  key={promo.id}
-                                  className={`prod ${
-                                    promo.isActive === false ? "prod--disabled" : ""
-                                  }`}
-                                >
-                                  <div className="prod-head">
-                                    <b className="prod-title">{promo.name}</b>
-                                    <span className={active ? "pill pill--ok" : "pill pill--neutral"}>
-                                      {active ? "Dipakai" : "Opsional"}
-                                    </span>
-                                  </div>
-
-                                  <small className="muted">
-                                    {promoSummaryText(promo, promoProductsMap)}
-                                  </small>
-
-                                  <div className="prod-actions">
-                                    <button
-                                      className={active ? "btn" : "btn secondary"}
-                                      type="button"
-                                      onClick={() => togglePromo(promo.id)}
-                                    >
-                                      {active ? "Lepas Promo" : "Pakai Promo"}
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-
-                            {!activeMetaPromos.length ? (
-                              <EmptyBox>Belum ada promo aktif.</EmptyBox>
-                            ) : null}
-                          </div>
-                        </section>
-
-                        <div className="hr" />
-
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Keranjang {activeChannelLabel}</h3>
-                              <div className="card-subtitle">
-                                {activeCart.length
-                                  ? `${activeCart.length} item di keranjang.`
-                                  : "Belum ada item."}
-                              </div>
-                            </div>
-                          </div>
-
-                          {activeCart.length ? (
-                            <div className="adm-list">
-                              {activeCart.map((item) => (
-                                <article key={item.key} className="adm-list-item">
-                                  <div className="adm-list-top" style={{ alignItems: "center" }}>
-                                    <div>
-                                      <div className="adm-list-title">
-                                        {item.name}{" "}
-                                        <span className="adm-badge">{item.portion}</span>
-                                      </div>
-                                      <div className="adm-list-meta">
-                                        {rupiah(item.price)} x {item.qty}
-                                      </div>
-                                    </div>
-
-                                    <div className="queue-total">
-                                      {rupiah(item.price * item.qty)}
-                                    </div>
-                                  </div>
-
-                                  <div className="adm-form-grid" style={{ marginTop: 12 }}>
-                                    <div className="pos-field">
-                                      <label>Catatan Item</label>
-                                      <input
-                                        className="input"
-                                        placeholder="Level pedas / mix saus"
-                                        value={item.itemNote}
-                                        onChange={(event) =>
-                                          updateCartItemNote(item.key, event.target.value)
-                                        }
-                                      />
-                                    </div>
-
-                                    <div className="pos-field">
-                                      <label>Qty</label>
-                                      <div className="qty-ctrl">
-                                        <button
-                                          className="btn secondary btn--sm"
-                                          type="button"
-                                          onClick={() => updateQty(item.key, -1)}
-                                        >
-                                          -
-                                        </button>
-
-                                        <div className="qty-num">{item.qty}</div>
-
-                                        <button
-                                          className="btn secondary btn--sm"
-                                          type="button"
-                                          onClick={() => updateQty(item.key, +1)}
-                                        >
-                                          +
-                                        </button>
-
-                                        <button
-                                          className="btn danger btn--sm"
-                                          type="button"
-                                          onClick={() => removeItem(item.key)}
-                                        >
-                                          Hapus
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </article>
-                              ))}
-                            </div>
-                          ) : (
-                            <EmptyBox>Belum ada item. Pilih menu di atas.</EmptyBox>
-                          )}
-                        </section>
-
-                        <div className="hr" />
-
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Preview Promo</h3>
-                              <div className="card-subtitle">
-                                Ringkasan diskon dan bonus dari promo terpilih.
-                              </div>
-                            </div>
-                          </div>
-
-                          {!activePromoIds.length ? (
-                            <EmptyBox>Belum ada promo dipilih.</EmptyBox>
-                          ) : (
-                            <div className="adm-list">
-                              {cartPromoPreview.discountBreakdown.map((row) => (
-                                <div key={row.id} className="adm-list-item">
-                                  <div className="adm-list-top">
-                                    <div>
-                                      <div className="adm-list-title">{row.name}</div>
-                                      <div className="adm-list-meta">{row.label}</div>
-                                    </div>
-
-                                    <b>- {rupiah(row.amount)}</b>
-                                  </div>
-                                </div>
-                              ))}
-
-                              {cartPromoPreview.bonusItems.map((item) => (
-                                <div key={item.key} className="adm-list-item">
-                                  <div className="adm-list-top">
-                                    <div>
-                                      <div className="adm-list-title">{item.name}</div>
-                                      <div className="adm-list-meta">
-                                        Bonus {item.portion} • Qty {item.qty}
-                                      </div>
-                                    </div>
-
-                                    <span className="adm-badge adm-badge--cash">GRATIS</span>
-                                  </div>
-                                </div>
-                              ))}
-
-                              {cartPromoPreview.skippedPromos.map((row) => (
-                                <div key={row.id} className="toast toast--danger">
-                                  <b>{row.name}</b> belum berlaku — {row.reason}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </section>
-
-                        <div className="hr" />
-
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Data Order</h3>
-                              <div className="card-subtitle">
-                                Bisa masuk antrian atau langsung transaksi.
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="pos-form">
-                            <div className="adm-form-grid">
-                              <div className="pos-field">
-                                <label>Nama Pelanggan</label>
-                                <input
-                                  className="input"
-                                  value={activeCustomerName}
-                                  onChange={(event) =>
-                                    setActiveCustomerNameValue(event.target.value)
-                                  }
-                                  placeholder="Contoh: Budi / Teh Rina"
-                                />
-                              </div>
-
-                              <div className="pos-field">
-                                <label>Metode Bayar</label>
-                                <select
-                                  className="input"
-                                  value={activePaymentMethod}
-                                  onChange={(event) =>
-                                    setActivePaymentMethodValue(event.target.value)
-                                  }
-                                >
-                                  <option value="CASH">CASH</option>
-                                  <option value="QRIS">QRIS</option>
-                                  <option value="TRANSFER">TRANSFER</option>
-                                </select>
-                              </div>
-
-                              <div className="pos-field">
-                                <label>Diskon Manual</label>
-                                <input
-                                  className="input"
-                                  type="number"
-                                  min="0"
-                                  value={activeDiscount}
-                                  onChange={(event) =>
-                                    setActiveDiscountValue(event.target.value)
-                                  }
-                                  placeholder="0"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="pos-field">
-                              <label>Catatan Order</label>
-                              <input
-                                className="input"
-                                value={activeNote}
-                                onChange={(event) => setActiveNoteValue(event.target.value)}
-                                placeholder="Opsional"
-                              />
-                            </div>
-
-                            <TotalSummary
-                              channel={activeSalesChannel}
-                              gross={grossTotal}
-                              manualDiscount={activeDiscount}
-                              promoDiscount={cartPromoPreview.discountTotal}
-                              platformFeePercent={activeFeePercent}
-                              platformFeeAmount={platformFeeAmount}
-                              subtotalAfterFee={subtotalAfterPlatformFee}
-                              totalDiscount={totalDiscount}
-                              netTotal={netTotal}
-                            />
-
-                            <div className="pos-actions">
-                              <button
-                                className="btn secondary"
-                                type="button"
-                                onClick={enqueueOrder}
-                                disabled={!activeCustomerName || activeCart.length === 0}
-                              >
-                                Tambah ke Antrian
-                              </button>
-
-                              <button
-                                className="btn"
-                                type="button"
-                                onClick={submitSale}
-                                disabled={saleBusy || activeCart.length === 0}
-                              >
-                                {saleBusy ? "Memproses..." : "Transaksi Langsung"}
-                              </button>
-                            </div>
-                          </div>
-                        </section>
-                      </>
-                    ) : null}
-
-                    {mainTab === "CASH" ? (
-                      <>
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Cash In / Out</h3>
-                              <div className="card-subtitle">
-                                Catat tambah kas atau pengeluaran non-transaksi.
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="pos-form">
-                            <div>
-                              <label>Jenis</label>
-                              <Tabs
-                                items={[
-                                  { value: "CASH_OUT", label: "Cash Out" },
-                                  { value: "CASH_IN", label: "Cash In" },
-                                ]}
-                                value={cashMoveType}
-                                onChange={setCashMoveType}
-                              />
-                            </div>
-
-                            <div className="adm-form-grid">
-                              <div className="pos-field">
-                                <label>Nominal</label>
-                                <input
-                                  className="input"
-                                  type="number"
-                                  value={cashMoveAmount}
-                                  onChange={(event) =>
-                                    setCashMoveAmount(event.target.value)
-                                  }
-                                  placeholder="0"
-                                />
-                              </div>
-
-                              <div className="pos-field">
-                                <label>Catatan</label>
-                                <input
-                                  className="input"
-                                  value={cashMoveNote}
-                                  onChange={(event) => setCashMoveNote(event.target.value)}
-                                  placeholder="Contoh: beli gas / tambah kembalian"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="pos-actions">
-                              <button
-                                className="btn"
-                                type="button"
-                                onClick={submitCashMovement}
-                                disabled={!cashMoveAmount || Number(cashMoveAmount) <= 0}
-                              >
-                                Simpan Cash Movement
-                              </button>
-                            </div>
-                          </div>
-                        </section>
-
-                        <div className="hr" />
-
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Riwayat Cash Movement</h3>
-                              <div className="card-subtitle">Maksimal 20 data terbaru.</div>
-                            </div>
-
-                            <button
-                              className="btn secondary btn--sm"
-                              type="button"
-                              onClick={() =>
-                                exportMovementsCSV(
-                                  movementsFiltered,
-                                  String(cashTab).toLowerCase()
-                                )
-                              }
-                              disabled={!movementsFiltered.length}
-                            >
-                              Export CSV
-                            </button>
-                          </div>
-
-                          <Tabs
-                            items={[
-                              { value: "ALL", label: `Semua (${movementStats.total})` },
-                              {
-                                value: "CASH_IN",
-                                label: `Cash In (${movementStats.cashInCount})`,
-                              },
-                              {
-                                value: "CASH_OUT",
-                                label: `Cash Out (${movementStats.cashOutCount})`,
-                              },
-                            ]}
-                            value={cashTab}
-                            onChange={setCashTab}
-                          />
-
-                          {movementsFiltered.length ? (
-                            <div className="adm-list" style={{ marginTop: 12 }}>
-                              {movementsFiltered.slice(0, 20).map((movement) => (
-                                <article key={movement.id} className="adm-list-item">
-                                  <div className="adm-list-top" style={{ alignItems: "center" }}>
-                                    <div>
-                                      <div className="adm-list-title">
-                                        {toTime(movement.createdAt)}
-                                      </div>
-                                      <div className="adm-list-meta">
-                                        {movement.note || "-"}
-                                      </div>
-                                    </div>
-
-                                    <div className="adm-list-badges">
-                                      <span
-                                        className={
-                                          movement.type === "CASH_IN"
-                                            ? "adm-badge adm-badge--cash"
-                                            : "adm-badge badge--danger"
-                                        }
-                                      >
-                                        {movement.type}
-                                      </span>
-
-                                      <b>{rupiah(movement.amount)}</b>
-                                    </div>
-                                  </div>
-                                </article>
-                              ))}
-                            </div>
-                          ) : (
-                            <EmptyBox>Belum ada data untuk filter ini.</EmptyBox>
-                          )}
-                        </section>
-                      </>
-                    ) : null}
-
-                    {mainTab === "SHIFT" ? (
-                      <>
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Ringkasan Shift</h3>
-                              <div className="card-subtitle">Performa shift berjalan.</div>
-                            </div>
-                          </div>
-
-                          {summary ? (
-                            <div className="adm-form-grid">
-                              <MiniStat label="Modal Awal" value={rupiah(summary.openingCash)} />
-                              <MiniStat label="Penjualan CASH" value={rupiah(summary.cashSales)} />
-                              <MiniStat label="Penjualan QRIS" value={rupiah(summary.qrisSales)} />
-                              <MiniStat label="Cash IN" value={rupiah(summary.cashIn)} />
-                              <MiniStat label="Cash OUT" value={rupiah(summary.cashOut)} />
-                              <MiniStat label="Expected Cash" value={rupiah(summary.expectedCash)} />
-                            </div>
-                          ) : (
-                            <EmptyBox>Belum ada ringkasan shift.</EmptyBox>
-                          )}
-                        </section>
-
-                        <div className="hr" />
-
-                        <section className="pos-section">
-                          <div className="pos-section-head">
-                            <div>
-                              <h3 className="pos-h3">Tutup Shift</h3>
-                              <div className="card-subtitle">
-                                Tutup shift dilakukan lewat popup konfirmasi.
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="pos-actions">
-                            <button
-                              className="btn secondary"
-                              type="button"
-                              onClick={exportShiftCSV}
-                              disabled={!summary}
-                            >
-                              Export Shift CSV
-                            </button>
-
-                            <button
-                              className="btn danger"
-                              type="button"
-                              onClick={() => setCloseShiftOpen(true)}
-                            >
-                              Tutup Shift
-                            </button>
-                          </div>
-                        </section>
-                      </>
-                    ) : null}
-
-                    {mainTab === "STOCK" ? (
-                      <CashierStockPanel
-                        token={token}
-                        meta={meta}
-                        shift={shift}
-                        cartName={cartName}
-                      />
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="pos-col pos-col--queue">
-              <div className="pos-card">
-                <div className="pos-section-head pos-section-head--tight">
-                  <div>
-                    <h3 className="pos-h3">
-                      Antrian {visibleQueueChannel === "GOJEK" ? "Gojek" : "Regular"}
-                    </h3>
-                    <div className="card-subtitle">
-                      Klik pesanan untuk edit, centang bayar, lalu checkout.
-                    </div>
-                  </div>
-
-                  {qLoading ? (
-                    <span className="loading-inline muted">
-                      <span className="spinner spinner--sm" aria-hidden="true" />
-                      Loading
-                    </span>
-                  ) : (
-                    <span className="badge">{visibleQueue.length} order</span>
-                  )}
-                </div>
-
-                {qErr ? (
-                  <div className="toast toast--danger" style={{ marginTop: 12 }}>
-                    {qErr}
-                  </div>
-                ) : null}
-
-                <div className="hr" />
-
-                {!visibleQueue.length ? (
-                  <EmptyBox>Belum ada antrian.</EmptyBox>
-                ) : (
-                  <div className="queue-list">
-                    {visibleQueue.map((order) => (
-                      <button
-                        key={order.id}
-                        type="button"
-                        className="queue-item"
-                        onClick={() => openOrderModal(order.id)}
-                      >
-                        <div className="queue-row">
-                          <div className="queue-left">
-                            <div className="queue-name">{order.customerName}</div>
-                            <div className="queue-sub">
-                              {toTime(order.createdAt)} • {order.itemCount || 0} item
-                            </div>
-                          </div>
-
-                          <div className="queue-right">
-                            <div
-                              className="queue-sub"
-                              style={{
-                                display: "flex",
-                                gap: 8,
-                                justifyContent: "flex-end",
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              <span className="pill pill--soft">
-                                {order.salesChannel === "GOJEK" ? "GOJEK" : "REGULAR"}
-                              </span>
-
-                              {order.status === "PENDING_PAID" ? (
-                                <span className="pill pill--ok">Sudah bayar</span>
-                              ) : (
-                                <span className="pill pill--neutral">Belum bayar</span>
-                              )}
-                            </div>
-
-                            <div className="queue-total">{rupiah(order.grossTotal || 0)}</div>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {closeShiftOpen && shift ? (
-            <div className="modal-overlay" onClick={() => setCloseShiftOpen(false)}>
-              <div className="modal-card pos-card" onClick={(event) => event.stopPropagation()}>
-                <div className="modal-head">
-                  <div>
-                    <h3 style={{ margin: 0 }}>Tutup Shift • {cartName}</h3>
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      {new Date().toLocaleString("id-ID")}
-                    </div>
-                  </div>
-
-                  <button
-                    className="btn secondary"
-                    type="button"
-                    onClick={() => setCloseShiftOpen(false)}
-                    disabled={closeShiftBusy}
-                  >
-                    Tutup
-                  </button>
-                </div>
-
-                <div className="modal-body">
-                  {summary ? (
-                    <div className="adm-form-grid">
-                      <MiniStat label="Modal Awal" value={rupiah(summary.openingCash)} />
-                      <MiniStat label="Penjualan CASH" value={rupiah(summary.cashSales)} />
-                      <MiniStat label="Penjualan QRIS" value={rupiah(summary.qrisSales)} />
-                      <MiniStat label="Cash IN" value={rupiah(summary.cashIn)} />
-                      <MiniStat label="Cash OUT" value={rupiah(summary.cashOut)} />
-                      <MiniStat label="Expected Cash" value={rupiah(summary.expectedCash)} />
-                    </div>
-                  ) : (
-                    <EmptyBox>Ringkasan belum tersedia.</EmptyBox>
-                  )}
-
-                  <div className="hr" />
-
-                  <div className="pos-form">
-                    <div className="pos-field">
-                      <label>Kas Fisik Saat Tutup</label>
-                      <input
-                        className="input"
-                        type="number"
-                        value={closingCash}
-                        onChange={(event) => setClosingCash(event.target.value)}
-                        placeholder={
-                          summary?.expectedCash != null
-                            ? `Expected: ${rupiah(summary.expectedCash)}`
-                            : ""
-                        }
-                      />
-
-                      {summary?.expectedCash != null && String(closingCash) !== "" ? (
-                        (() => {
-                          const expected = Number(summary.expectedCash || 0);
-                          const closing = Number(closingCash || 0);
-
-                          if (!Number.isFinite(closing)) return null;
-
-                          const variance = closing - expected;
-                          const label =
-                            variance === 0 ? "PAS" : variance > 0 ? "LEBIH" : "KURANG";
-
-                          return (
-                            <div className="field-hint">
-                              Selisih: <b>{rupiah(Math.abs(variance))}</b> ({label})
-                            </div>
-                          );
-                        })()
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="modal-footer">
-                  <button
-                    className="btn secondary"
-                    type="button"
-                    onClick={exportShiftCSV}
-                    disabled={!summary}
-                  >
-                    Export Shift CSV
-                  </button>
-
-                  <button
-                    className="btn danger"
-                    type="button"
-                    onClick={confirmCloseShiftFromModal}
-                    disabled={
-                      closeShiftBusy ||
-                      String(closingCash) === "" ||
-                      Number(closingCash) <= 0
-                    }
-                  >
-                    {closeShiftBusy ? "Menutup..." : "Konfirmasi Tutup Shift"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {modalOpen && openOrder ? (
-            <div className="modal-overlay" onClick={closeOrderModal}>
-              <div className="modal-card pos-card" onClick={(event) => event.stopPropagation()}>
-                <div className="modal-head">
-                  <div>
-                    <h3 style={{ margin: 0 }}>Checkout: {openOrder.customerName}</h3>
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      Dibuat: {new Date(openOrder.createdAt).toLocaleString("id-ID")}
-                    </div>
-                  </div>
-
-                  <div className="adm-actions">
-                    <label className="check-compact">
-                      <input
-                        type="checkbox"
-                        checked={!!orderIsPaid}
-                        disabled={paidBusy || editMode}
-                        onChange={(event) => setOrderPaid(openOrder.id, event.target.checked)}
-                      />
-                      <span>Sudah bayar</span>
-                    </label>
-
-                    {orderIsPaid ? (
-                      <span className="pill pill--ok">PAID</span>
-                    ) : (
-                      <span className="pill pill--neutral">UNPAID</span>
-                    )}
-
-                    <button className="btn secondary" type="button" onClick={closeOrderModal}>
-                      Tutup
-                    </button>
-                  </div>
-                </div>
-
-                <div className="modal-body">
-                  {editMode ? (
-                    <>
-                      <div className="pos-section-head">
-                        <div>
-                          <h3 className="pos-h3">Edit Item</h3>
-                          <div className="card-subtitle">
-                            Setelah disimpan, status bayar kembali UNPAID.
-                          </div>
-                        </div>
-
-                        <button
-                          className="btn secondary btn--sm"
-                          type="button"
-                          onClick={addEditRow}
-                        >
-                          + Tambah Item
-                        </button>
-                      </div>
-
-                      <div className="adm-list" style={{ marginTop: 14 }}>
-                        {(editItems || []).map((row) => {
-                          const unit = editUnitPrice(row);
-                          const qty = Number(row.qty || 0);
-                          const subtotal =
-                            Math.max(0, (Number.isFinite(qty) ? qty : 0) * unit);
-
-                          return (
-                            <article key={row.rowId} className="adm-list-item">
-                              <div className="adm-form-grid">
-                                <div className="pos-field">
-                                  <label>Produk</label>
-                                  <select
-                                    className="input"
-                                    value={row.productId || ""}
-                                    onChange={(event) =>
-                                      patchEditRow(row.rowId, {
-                                        productId: event.target.value,
-                                      })
-                                    }
-                                  >
-                                    {editAvailableProducts.map((product) => (
-                                      <option key={product.id} value={product.id}>
-                                        {product.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-
-                                <div className="pos-field">
-                                  <label>Portion</label>
-                                  <select
-                                    className="input"
-                                    value={row.portion === "LARGE" ? "LARGE" : "SMALL"}
-                                    onChange={(event) =>
-                                      patchEditRow(row.rowId, {
-                                        portion: event.target.value,
-                                      })
-                                    }
-                                  >
-                                    <option value="SMALL">SMALL</option>
-                                    <option value="LARGE">LARGE</option>
-                                  </select>
-                                </div>
-
-                                <div className="pos-field">
-                                  <label>Qty</label>
-                                  <div className="qty-ctrl">
-                                    <button
-                                      className="btn secondary btn--sm"
-                                      type="button"
-                                      onClick={() =>
-                                        patchEditRow(row.rowId, {
-                                          qty: Math.max(1, Number(row.qty || 1) - 1),
-                                        })
-                                      }
-                                    >
-                                      -
-                                    </button>
-
-                                    <input
-                                      className="input"
-                                      type="number"
-                                      value={row.qty}
-                                      onChange={(event) =>
-                                        patchEditRow(row.rowId, {
-                                          qty: Math.max(1, Number(event.target.value || 1)),
-                                        })
-                                      }
-                                      style={{ width: 80, textAlign: "center" }}
-                                    />
-
-                                    <button
-                                      className="btn secondary btn--sm"
-                                      type="button"
-                                      onClick={() =>
-                                        patchEditRow(row.rowId, {
-                                          qty: Number(row.qty || 1) + 1,
-                                        })
-                                      }
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="adm-form-grid" style={{ marginTop: 12 }}>
-                                <div className="pos-field">
-                                  <label>Catatan Item</label>
-                                  <input
-                                    className="input"
-                                    placeholder="Opsional"
-                                    value={row.itemNote || ""}
-                                    onChange={(event) =>
-                                      patchEditRow(row.rowId, {
-                                        itemNote: event.target.value,
-                                      })
-                                    }
-                                  />
-                                </div>
-
-                                <MiniStat label="Subtotal" value={rupiah(subtotal)} />
-                              </div>
-
-                              <div className="adm-actions-row" style={{ marginTop: 12 }}>
-                                <div />
-                                <button
-                                  className="btn danger btn--sm"
-                                  type="button"
-                                  onClick={() => removeEditRow(row.rowId)}
-                                >
-                                  Hapus
-                                </button>
-                              </div>
-                            </article>
-                          );
-                        })}
-                      </div>
-
-                      <div className="pos-field" style={{ marginTop: 14 }}>
-                        <label>Catatan Order</label>
-                        <textarea
-                          className="input"
-                          rows="2"
-                          value={editNote}
-                          onChange={(event) => setEditNote(event.target.value)}
-                        />
-                      </div>
-
-                      <div className="hr" />
-
-                      <TotalSummary
-                        channel={checkoutChannel}
-                        gross={editGrossPreview}
-                        manualDiscount={0}
-                        promoDiscount={0}
-                        platformFeePercent={checkoutFeePercent}
-                        platformFeeAmount={calcChannelFee(
-                          editGrossPreview,
-                          checkoutFeePercent
-                        )}
-                        subtotalAfterFee={Math.max(
-                          0,
-                          editGrossPreview -
-                            calcChannelFee(editGrossPreview, checkoutFeePercent)
-                        )}
-                        totalDiscount={0}
-                        netTotal={Math.max(
-                          0,
-                          editGrossPreview -
-                            calcChannelFee(editGrossPreview, checkoutFeePercent)
-                        )}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      <section className="pos-section">
-                        <div className="pos-section-head">
-                          <div>
-                            <h3 className="pos-h3">Detail Item</h3>
-                            <div className="card-subtitle">
-                              Cek item sebelum checkout.
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="adm-list">
-                          {(openOrder.items || []).map((item) => (
-                            <article key={item.id} className="adm-list-item">
-                              <div className="adm-list-top" style={{ alignItems: "center" }}>
-                                <div>
-                                  <div className="adm-list-title">
-                                    {item.product?.name || "(Produk)"}
-                                  </div>
-                                  <div className="adm-list-meta">
-                                    {item.portion} • Qty {item.qty}
-                                    {item.itemNote ? ` • ${item.itemNote}` : ""}
-                                  </div>
-                                </div>
-
-                                <b>{rupiah(Number(item.price || 0) * Number(item.qty || 0))}</b>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      </section>
-
-                      <div className="hr" />
-
-                      {!orderIsPaid ? (
-                        <div className="toast toast--danger">
-                          Centang <b>Sudah bayar</b> dulu supaya bisa checkout.
-                        </div>
-                      ) : null}
-
-                      <section className="pos-section">
-                        <div className="pos-section-head">
-                          <div>
-                            <h3 className="pos-h3">Promo Checkout</h3>
-                            <div className="card-subtitle">
-                              Promo diterapkan saat order diselesaikan.
-                            </div>
-                          </div>
-
-                          <span className="badge">{checkout.promoIds.length} dipilih</span>
-                        </div>
-
-                        <div className="grid-products">
-                          {checkoutMetaPromos.map((promo) => {
-                            const active = (checkout.promoIds || []).includes(promo.id);
-                            const minSubtotal = Number(promo.minSubtotal || 0);
-                            const meetsMin = Number(openOrder?.grossTotal || 0) >= minSubtotal;
-
-                            return (
-                              <div
-                                key={promo.id}
-                                className={`prod ${!meetsMin ? "prod--disabled" : ""}`}
-                              >
-                                <div className="prod-head">
-                                  <b className="prod-title">{promo.name}</b>
-                                  <span className={active ? "pill pill--ok" : "pill pill--neutral"}>
-                                    {active ? "Dipakai" : "Opsional"}
-                                  </span>
-                                </div>
-
-                                <small className="muted">
-                                  {promoSummaryText(promo, checkoutPromoProductsMap)}
-                                </small>
-
-                                {!meetsMin ? (
-                                  <small className="muted">
-                                    Belum memenuhi minimum subtotal.
-                                  </small>
-                                ) : null}
-
-                                <div className="prod-actions">
-                                  <button
-                                    className={active ? "btn" : "btn secondary"}
-                                    type="button"
-                                    onClick={() => toggleCheckoutPromo(promo.id)}
-                                    disabled={checkoutBusy}
-                                  >
-                                    {active ? "Lepas Promo" : "Pakai Promo"}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          {!checkoutMetaPromos.length ? (
-                            <EmptyBox>Belum ada promo aktif.</EmptyBox>
-                          ) : null}
-                        </div>
-
-                        {checkoutPromoPreview.bonusItems.length ? (
-                          <div className="adm-list" style={{ marginTop: 12 }}>
-                            {checkoutPromoPreview.bonusItems.map((item) => (
-                              <article key={item.key} className="adm-list-item">
-                                <div className="adm-list-top">
-                                  <div>
-                                    <div className="adm-list-title">{item.name}</div>
-                                    <div className="adm-list-meta">
-                                      {item.portion} • Qty {item.qty} •{" "}
-                                      {item.promoNames.join(", ")}
-                                    </div>
-                                  </div>
-
-                                  <span className="adm-badge adm-badge--cash">GRATIS</span>
-                                </div>
-                              </article>
-                            ))}
-                          </div>
-                        ) : null}
-                      </section>
-
-                      <div className="hr" />
-
-                      <div className="pos-form">
-                        <div className="adm-form-grid">
-                          <div className="pos-field">
-                            <label>Metode Pembayaran</label>
-                            <select
-                              className="input"
-                              value={checkout.paymentMethod}
-                              onChange={(event) =>
-                                setCheckout((prev) => ({
-                                  ...prev,
-                                  paymentMethod: event.target.value,
-                                }))
-                              }
-                              disabled={checkoutBusy || !orderIsPaid}
-                            >
-                              <option value="CASH">CASH</option>
-                              <option value="QRIS">QRIS</option>
-                              <option value="TRANSFER">TRANSFER</option>
-                            </select>
-                          </div>
-
-                          <div className="pos-field">
-                            <label>Diskon Manual</label>
-                            <input
-                              className="input"
-                              type="number"
-                              min="0"
-                              value={checkout.manualDiscount}
-                              onChange={(event) =>
-                                setCheckout((prev) => ({
-                                  ...prev,
-                                  manualDiscount: event.target.value,
-                                }))
-                              }
-                              disabled={checkoutBusy || !orderIsPaid}
-                            />
-                          </div>
-                        </div>
-
-                        <div className="pos-field">
-                          <label>Catatan Checkout</label>
-                          <input
-                            className="input"
-                            value={checkout.note}
-                            onChange={(event) =>
-                              setCheckout((prev) => ({
-                                ...prev,
-                                note: event.target.value,
-                              }))
-                            }
-                            disabled={checkoutBusy || !orderIsPaid}
-                            placeholder="Opsional"
-                          />
-                        </div>
-
-                        <TotalSummary
-                          channel={checkoutChannel}
-                          gross={checkoutGrossTotal}
-                          manualDiscount={Number(checkout.manualDiscount || 0)}
-                          promoDiscount={checkoutPromoPreview.discountTotal}
-                          platformFeePercent={checkoutFeePercent}
-                          platformFeeAmount={checkoutPlatformFeeAmount}
-                          subtotalAfterFee={checkoutSubtotalAfterPlatformFee}
-                          totalDiscount={checkoutTotalDiscount}
-                          netTotal={checkoutNetTotal}
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="modal-footer">
-                  {editMode ? (
-                    <>
-                      <button
-                        className="btn danger"
-                        type="button"
-                        onClick={() => cancelOrder(openOrder.id)}
-                        disabled={editBusy || paidBusy}
-                      >
-                        Batalkan Order
-                      </button>
-
-                      <button
-                        className="btn secondary"
-                        type="button"
-                        onClick={() => {
-                          setEditMode(false);
-                          resetEditStateFromOpenOrder();
-                        }}
-                        disabled={editBusy}
-                      >
-                        Batal Edit
-                      </button>
-
-                      <button
-                        className="btn"
-                        type="button"
-                        onClick={() => saveOrderEdits(openOrder.id)}
-                        disabled={
-                          editBusy ||
-                          !editAvailableProducts.length ||
-                          (editItems || []).length === 0
-                        }
-                      >
-                        {editBusy ? "Menyimpan..." : "Simpan Perubahan"}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        className="btn danger"
-                        type="button"
-                        onClick={() => cancelOrder(openOrder.id)}
-                      >
-                        Batalkan Order
-                      </button>
-
-                      <button
-                        className="btn secondary"
-                        type="button"
-                        onClick={() => {
-                          resetEditStateFromOpenOrder();
-                          setEditMode(true);
-                        }}
-                        disabled={!editAvailableProducts.length}
-                      >
-                        Edit Order
-                      </button>
-
-                      <button
-                        className="btn"
-                        type="button"
-                        onClick={() => checkoutOrder(openOrder.id)}
-                        disabled={checkoutBusy || !orderIsPaid || !checkout.paymentMethod}
-                      >
-                        {checkoutBusy ? "Memproses..." : "Selesaikan & Checkout"}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : null}
+            <Alert type="danger">{err}</Alert>
+            <Alert type="ok">{msg}</Alert>
+          </header>
+
+          {!shift ? (
+            renderShiftClosed()
+          ) : (
+            <>
+              {!checkoutView ? (
+                <section className="pos-card cashier-nav-card">
+                  <Tabs items={MAIN_TABS} value={mainTab} onChange={setMainTab} />
+                </section>
+              ) : null}
+
+              {mainTab === "SELL" ? renderSellTab() : null}
+              {mainTab === "CASH" && !checkoutView ? renderCashTab() : null}
+              {mainTab === "SHIFT" && !checkoutView ? renderShiftTab() : null}
+              {mainTab === "STOCK" && !checkoutView ? (
+                <CashierStockPanel token={token} meta={meta} shift={shift} cartName={cartName} />
+              ) : null}
+            </>
+          )}
+
+          {renderCloseShiftModal()}
         </div>
       </div>
     </div>
